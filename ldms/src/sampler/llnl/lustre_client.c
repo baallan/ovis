@@ -68,14 +68,12 @@
 #define LLITE_PATH "/proc/fs/lustre/llite"
 #define OSD_SEARCH_PATH "/proc/fs/lustre"
 
-ldmsd_msg_log_f log_fn;
+static ldmsd_msg_log_f log_fn;
 static char producer_name[LDMS_PRODUCER_NAME_MAX];
 static uint64_t component_id;
 static time_t last_refresh;
 static time_t refresh_interval = 30;
-#ifdef ENABLE_JOBID
-bool with_jobid = true; /* for LJI */
-#endif
+LJI_GLOBALS;
 
 /* red-black tree root for llites */
 static struct rbt llite_tree;
@@ -247,7 +245,7 @@ static void llites_sample()
                 struct llite_data *llite;
                 llite = container_of(rbn, struct llite_data, llite_tree_node);
                 llite_general_sample(llite->name, llite->stats_path,
-                                   llite->general_metric_set);
+                                   llite->general_metric_set, with_jobid);
         }
 }
 
@@ -255,7 +253,7 @@ static int sample(struct ldmsd_sampler *self)
 {
         log_fn(LDMSD_LDEBUG, SAMP" sample() called\n");
         if (llite_general_schema_is_initialized() < 0) {
-                if (llite_general_schema_init() < 0) {
+                if (llite_general_schema_init(log_fn) < 0) {
                         log_fn(LDMSD_LERROR, SAMP" general schema create failed\n");
                         return ENOMEM;
                 }
@@ -358,3 +356,4 @@ struct ldmsd_plugin *get_plugin(ldmsd_msg_log_f pf)
 
         return &llite_plugin.base;
 }
+

@@ -112,8 +112,10 @@ int llite_general_schema_is_initialized()
                 return -1;
 }
 
-int llite_general_schema_init()
+static ldmsd_msg_log_f log_fn;
+int llite_general_schema_init(ldmsd_msg_log_f log)
 {
+	log_fn = log;
         ldms_schema_t sch;
         int rc;
         int i;
@@ -201,7 +203,7 @@ ldms_set_t llite_general_create(const char *host_name, const char *producer_name
 }
 
 static void llite_stats_sample(const char *stats_path,
-                                   ldms_set_t general_metric_set)
+                                   ldms_set_t general_metric_set, bool with_jobid)
 {
         FILE *sf;
         char buf[512];
@@ -259,7 +261,7 @@ static void llite_stats_sample(const char *stats_path,
                         continue;
                 }
         }
-	LJI_SAMPLE(general_metric_set, ldms_metric_by_name(LJI_JOBID_METRIC_NAME));
+	LJI_SAMPLE(general_metric_set, ldms_metric_by_name(general_metric_set, LJI_JOBID_METRIC_NAME));
         ldms_transaction_end(general_metric_set);
 out1:
         fclose(sf);
@@ -268,9 +270,9 @@ out1:
 }
 
 void llite_general_sample(const char *llite_name, const char *stats_path,
-                          ldms_set_t general_metric_set)
+                          ldms_set_t general_metric_set, bool with_jobid)
 {
         log_fn(LDMSD_LDEBUG, SAMP" llite_general_sample() %s\n",
                llite_name);
-        llite_stats_sample(stats_path, general_metric_set);
+        llite_stats_sample(stats_path, general_metric_set, with_jobid);
 }

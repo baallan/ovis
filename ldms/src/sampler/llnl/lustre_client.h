@@ -58,9 +58,5 @@
 
 #define SAMP "lustre_client"
 
-extern ldmsd_msg_log_f log_fn;
-#ifdef ENABLE_JOBID
-extern bool with_jobid;
-#endif
 
 #endif /* __LUSTRE_LLITE_H */

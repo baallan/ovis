@@ -57,14 +57,14 @@
 #include "ldmsd.h"
 
 int llite_general_schema_is_initialized();
-int llite_general_schema_init();
+int llite_general_schema_init(ldmsd_msg_log_f log_fn);
 void llite_general_schema_fini();
 ldms_set_t llite_general_create(const char *host_name, const char *producer_name,
                                 const char *fs_name, const char *llite_name,
                                 uint64_t component_id);
 char *llite_general_osd_path_find(const char *search_path, const char *llite_name);
 void llite_general_sample(const char *llite_name, const char *stats_path,
-                          ldms_set_t general_metric_set);
+                          ldms_set_t general_metric_set, bool with_jobid);
 void llite_general_destroy(ldms_set_t set);
 
 #endif /* __LUSTRE_LLITE_GENERAL_H */
