@@ -12,6 +12,7 @@ COMMON_LIBADD = $(CORE)/libldms.la \
 
 if ENABLE_JOBID
 JOBID_LIBFLAGS = ../libjobid.la
+AM_CFLAGS += -DENABLE_JOBID
 endif
 
 if ENABLE_LLNL_EDAC
@@ -24,11 +25,7 @@ endif
 
 # lustre client plugin
 if ENABLE_LLNL_LUSTRE
-liblustre_client_la_SOURCES = \
-	lustre_client.c \
-	lustre_client_general.c \
-	lustre_client.h \
-	lustre_client_general.h
+liblustre_client_la_SOURCES = lustre_client.c
 liblustre_client_la_LIBADD = $(COMMON_LIBADD) $(JOBID_LIBFLAGS)
 liblustre_client_la_CFLAGS = $(AM_CFLAGS) -I$(srcdir)/$(SAMPLER)
 pkglib_LTLIBRARIES += liblustre_client.la

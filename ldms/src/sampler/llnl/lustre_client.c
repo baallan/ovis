@@ -50,6 +50,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+#include <stdint.h>
 #include <limits.h>
 #include <string.h>
 #include <dirent.h>
@@ -60,22 +61,21 @@
 #include "ldms.h"
 #include "ldmsd.h"
 #include "ldms_jobid.h"
-#include "lustre_client.h"
-#include "lustre_client_general.h"
 
 #define _GNU_SOURCE
 
+#define SAMP "lustre_client"
 #define LLITE_PATH "/proc/fs/lustre/llite"
-#define OSD_SEARCH_PATH "/proc/fs/lustre"
+#define DEFAULT_SCHEMA_NAME "lustre_client"
 
-ldmsd_msg_log_f log_fn;
+static ldmsd_msg_log_f log_fn;
 static char producer_name[LDMS_PRODUCER_NAME_MAX];
+static char schema_name[LDMS_SET_NAME_MAX];
 static uint64_t component_id;
 static time_t last_refresh;
 static time_t refresh_interval = 30;
-#ifdef ENABLE_JOBID
-bool with_jobid = true; /* for LJI */
-#endif
+static int job_id_index;
+LJI_GLOBALS;
 
 /* red-black tree root for llites */
 static struct rbt llite_tree;
@@ -89,6 +89,284 @@ struct llite_data {
         struct rbn llite_tree_node;
 };
 
+static ldms_schema_t llite_general_schema;
+
+static char *llite_stats_uint64_t_entries[] = {
+        "dirty_pages_hits",
+        "dirty_pages_misses",
+        "read_bytes.sum",
+        "write_bytes.sum",
+        "brw_read.sum",
+        "brw_write.sum",
+        "ioctl",
+        "open",
+        "close",
+        "mmap",
+        "page_fault",
+        "page_mkwrite",
+        "seek",
+        "fsync",
+        "readdir",
+        "setattr",
+        "truncate",
+        "flock",
+        "getattr",
+        "create",
+        "link",
+        "unlink",
+        "symlink",
+        "mkdir",
+        "rmdir",
+        "mknod",
+        "rename",
+        "statfs",
+        "alloc_inode",
+        "setxattr",
+        "getxattr",
+        "getxattr_hits",
+        "listxattr",
+        "removexattr",
+        "inode_permission",
+        NULL
+};
+
+/*******************************************************************/
+/* ldms_metrict_by_name() employs a linear lookup and is verboten for
+ * use by plugins in the main sample() loop.  This section section
+ * implemants a faster lookup using the rbt structure, and offers
+ * alt_ldms_metric_by_name() as a limited alternative to the original.
+ * Someday, perhaps ldms_metric_by_name() will be improved and this
+ * section can be removed.
+ */
+/* red-black tree root for metric index lookup table */
+static struct rbt metric_lookup_tree;
+struct metric_lookup_entry {
+        struct rbn node;
+        int index;
+};
+
+static int metric_lookup_tree_insert(const char *name, int index)
+{
+        struct metric_lookup_entry *entry;
+
+        entry = malloc(sizeof(struct metric_lookup_entry));
+        if (entry == NULL) {
+                return ENOMEM;
+        }
+        entry->index = index;
+        rbn_init(&entry->node, (char *)name);
+        rbt_ins(&metric_lookup_tree, &entry->node);
+
+        return 0;
+}
+
+static void metric_lookup_tree_destroy()
+{
+        struct rbn *rbn;
+        struct metric_lookup_entry *entry;
+
+        while (!rbt_empty(&metric_lookup_tree)) {
+                rbn = rbt_min(&metric_lookup_tree);
+                entry = container_of(rbn, struct metric_lookup_entry, node);
+                rbt_del(&metric_lookup_tree, rbn);
+                free(entry);
+        }
+}
+
+/* "set" is unused in this function.  It is just there to allow this
+   call to be a direct replacement for ldms_metric_by_name().  This plugin
+   only uses one schema, so there is only one global lookup table. */ 
+static int alt_ldms_metric_by_name(ldms_set_t set, const char *name)
+{
+        struct metric_lookup_entry *entry;
+        struct rbn *rbn;
+
+        rbn = rbt_find(&metric_lookup_tree, name);
+        if (rbn == NULL) {
+                return -1;
+        }
+        entry = container_of(rbn, struct metric_lookup_entry, node);
+
+        return entry->index;
+}
+/*******************************************************************/
+
+static int llite_general_schema_is_initialized()
+{
+        if (llite_general_schema != NULL)
+                return 0;
+        else
+                return -1;
+}
+
+static int llite_general_schema_init(const char *schema_name)
+{
+        ldms_schema_t sch;
+        int rc;
+        int i;
+
+        log_fn(LDMSD_LDEBUG, SAMP" llite_general_schema_init()\n");
+        sch = ldms_schema_new(schema_name);
+        if (sch == NULL)
+                goto err1;
+        rc = ldms_schema_meta_array_add(sch, "hostname", LDMS_V_CHAR_ARRAY, 64);
+        if (rc < 0)
+                goto err2;
+        rc = ldms_schema_meta_array_add(sch, "fs_name", LDMS_V_CHAR_ARRAY, 64);
+        if (rc < 0)
+                goto err2;
+        rc = ldms_schema_meta_array_add(sch, "llite", LDMS_V_CHAR_ARRAY, 64);
+        if (rc < 0)
+                goto err2;
+	rc = ldms_schema_meta_add(sch, "component_id", LDMS_V_U64);
+        if (rc < 0)
+                goto err2;
+	job_id_index = LJI_ADD_JOBID(sch);
+	if (job_id_index < 0) {
+		goto err2;
+	}
+        /* add llite stats entries */
+        for (i = 0; llite_stats_uint64_t_entries[i] != NULL; i++) {
+                rc = ldms_schema_metric_add(sch, llite_stats_uint64_t_entries[i],
+                                            LDMS_V_U64);
+                if (rc < 0)
+                        goto err2;
+                rc = metric_lookup_tree_insert(llite_stats_uint64_t_entries[i], rc);
+                if (rc != 0) {
+                        goto err2;
+                }
+        }
+
+        llite_general_schema = sch;
+
+        return 0;
+err2:
+        ldms_schema_delete(sch);
+err1:
+        log_fn(LDMSD_LERROR, SAMP" lustre_client schema creation failed\n");
+        return -1;
+}
+
+static void llite_general_schema_fini()
+{
+        log_fn(LDMSD_LDEBUG, SAMP" llite_general_schema_fini()\n");
+        if (llite_general_schema != NULL) {
+                ldms_schema_delete(llite_general_schema);
+                llite_general_schema = NULL;
+                metric_lookup_tree_destroy();
+        }
+}
+
+static void llite_general_destroy(ldms_set_t set)
+{
+        /* ldms_set_unpublish(set); */
+        ldms_set_delete(set);
+}
+
+/* must be schema created by llite_general_schema_create() */
+static ldms_set_t llite_general_create(const char *host_name, const char *producer_name,
+                                       const char *fs_name, const char *llite_name,
+                                       uint64_t component_id)
+{
+        ldms_set_t set;
+        int index;
+        char instance_name[256];
+
+        log_fn(LDMSD_LDEBUG, SAMP" llite_general_create()\n");
+        snprintf(instance_name, sizeof(instance_name), "%s/%s",
+                 producer_name, llite_name);
+        set = ldms_set_new(instance_name, llite_general_schema);
+        ldms_set_producer_name_set(set, producer_name);
+        index = ldms_metric_by_name(set, "hostname");
+        ldms_metric_array_set_str(set, index, host_name);
+        index = ldms_metric_by_name(set, "fs_name");
+        ldms_metric_array_set_str(set, index, fs_name);
+        index = ldms_metric_by_name(set, "llite");
+        ldms_metric_array_set_str(set, index, llite_name);
+        index = ldms_metric_by_name(set, "component_id");
+        ldms_metric_set_u64(set, index, component_id);
+        /* ldms_set_publish(set); */
+
+        return set;
+}
+
+static void llite_stats_sample(const char *stats_path,
+                                   ldms_set_t general_metric_set)
+{
+        FILE *sf;
+        char buf[512];
+        int index;
+
+        sf = fopen(stats_path, "r");
+        if (sf == NULL) {
+                log_fn(LDMSD_LWARNING, SAMP" file %s not found\n",
+                       stats_path);
+                return;
+        }
+
+        /* The first line should always be "snapshot_time"
+           we will ignore it because it always contains the time that we read
+           from the file, not any information about when the stats last
+           changed */
+        if (fgets(buf, sizeof(buf), sf) == NULL) {
+                log_fn(LDMSD_LWARNING, SAMP" failed on read from %s\n",
+                       stats_path);
+                goto out1;
+        }
+        if (strncmp("snapshot_time", buf, sizeof("snapshot_time")-1) != 0) {
+                log_fn(LDMSD_LWARNING, SAMP" first line in %s is not \"snapshot_time\": %s\n",
+                       stats_path, buf);
+                goto out1;
+        }
+
+        ldms_transaction_begin(general_metric_set);
+        while (fgets(buf, sizeof(buf), sf)) {
+                uint64_t val1, val2;
+                int rc;
+                char str1[64+1];
+
+                rc = sscanf(buf, "%64s %lu samples [%*[^]]] %*u %*u %lu",
+                            str1, &val1, &val2);
+                if (rc == 2) {
+                        index = alt_ldms_metric_by_name(general_metric_set, str1);
+                        if (index == -1) {
+                                log_fn(LDMSD_LWARNING, SAMP" llite stats metric not found: %s\n",
+                                       str1);
+                        } else {
+                                ldms_metric_set_u64(general_metric_set, index, val1);
+                        }
+                        continue;
+                } else if (rc == 3) {
+                        int base_name_len = strlen(str1);
+                        sprintf(str1+base_name_len, ".sum"); /* append ".sum" */
+                        index = alt_ldms_metric_by_name(general_metric_set, str1);
+                        if (index == -1) {
+                                log_fn(LDMSD_LWARNING, SAMP" llite stats metric not found: %s\n",
+                                       str1);
+                        } else {
+                                ldms_metric_set_u64(general_metric_set, index, val2);
+                        }
+                        continue;
+                }
+        }
+
+	LJI_SAMPLE(general_metric_set, job_id_index);
+
+        ldms_transaction_end(general_metric_set);
+out1:
+        fclose(sf);
+
+        return;
+}
+
+static void llite_general_sample(const char *llite_name, const char *stats_path,
+                                 ldms_set_t general_metric_set)
+{
+        log_fn(LDMSD_LDEBUG, SAMP" llite_general_sample() %s\n",
+               llite_name);
+        llite_stats_sample(stats_path, general_metric_set);
+}
+
 static int string_comparator(void *a, const void *b)
 {
         return strcmp((char *)a, (char *)b);
@@ -98,9 +376,7 @@ static struct llite_data *llite_create(const char *llite_name, const char *based
 {
         struct llite_data *llite;
         char path_tmp[PATH_MAX]; /* TODO: move large stack allocation to heap */
-        char *token;
         char *state;
-        ldms_set_t general_set;
 
         log_fn(LDMSD_LDEBUG, SAMP" llite_create() %s from %s\n",
                llite_name, basedir);
@@ -240,7 +516,7 @@ static void llites_refresh()
         return;
 }
 
-static int llites_sample()
+static void llites_sample()
 {
         struct rbn *rbn;
 
@@ -257,7 +533,7 @@ static int sample(struct ldmsd_sampler *self)
 {
         log_fn(LDMSD_LDEBUG, SAMP" sample() called\n");
         if (llite_general_schema_is_initialized() < 0) {
-                if (llite_general_schema_init() < 0) {
+                if (llite_general_schema_init(schema_name) < 0) {
                         log_fn(LDMSD_LERROR, SAMP" general schema create failed\n");
                         return ENOMEM;
                 }
@@ -292,7 +568,7 @@ static const char *usage(struct ldmsd_plugin *self)
 		"    <prod_name>  The producer name (default: the hostname)\n"
 		"    <inst_name>  The instance name (ignored, dynamically generated)\n"
 		"    <compid>     Optional unique number identifier (default: zero)\n"
-		"    <sname>      Optional schema name (ignored, static schema name)\n"
+		"    <sname>      Optional schema name\n"
                 "    <rsec>       Interval in seconds between rescanning for lustre client mounts (default: 30s)\n"
 		LJI_DESC;
 	return  "config name=" SAMP;
@@ -324,8 +600,7 @@ static int config(struct ldmsd_plugin *self,
 
 	value = av_value(avl, "schema");
 	if (value != NULL) {
-		log_fn(LDMSD_LWARNING, SAMP ": ignoring option \"schema=%s\"\n",
-                       value);
+                snprintf(schema_name, sizeof(schema_name), "%s", value);
 	}
 
 	value = av_value(avl, "rescan_sec");
@@ -355,8 +630,12 @@ struct ldmsd_plugin *get_plugin(ldmsd_msg_log_f pf)
         log_fn = pf;
         log_fn(LDMSD_LDEBUG, SAMP" get_plugin() called\n");
         rbt_init(&llite_tree, string_comparator);
+        rbt_init(&metric_lookup_tree, string_comparator);
         /* set the default producer name */
         gethostname(producer_name, sizeof(producer_name));
+        /* set the default schema name */
+        snprintf(schema_name, sizeof(schema_name), "%s", DEFAULT_SCHEMA_NAME);
+
 
         return &llite_plugin.base;
 }
