@@ -8,6 +8,14 @@
  * Energy by Lawrence Livermore National Laboratory under
  * Contract DE-AC52-07NA27344.
  *
+ * This plugin uses the template of the other LDMS plugins, but it
+ * gives access to different data. The following is the original header.
+ *
+ *
+ * Copyright © 2019 National Technology & Engineering Solutions of Sandia,
+ * LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the
+ * U.S. Government retains certain rights in this software.
+ *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
  * General Public License (GPL) Version 2, available from the file
@@ -52,7 +60,10 @@
  */
 #ifndef __LUSTRE_LLITE_H
 #define __LUSTRE_LLITE_H
-
+/**
+ * \file lustre_client.c
+ * \Grab lustre llite stats data.
+ */
 #include "ldms.h"
 #include "ldmsd.h"
 
