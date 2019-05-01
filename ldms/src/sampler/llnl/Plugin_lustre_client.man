@@ -1,6 +1,6 @@
 .\" Manpage for Plugin_lustre_client
 .\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
-.TH man 7 "18 Feb 2018" "v3" "LDMS Plugin lustre_client man page"
+.TH man 7 "18 Feb 2018" "v4" "LDMS Plugin lustre_client man page"
 
 .SH NAME
 Plugin_lustre_client - man page for the LDMS lustre_client plugin

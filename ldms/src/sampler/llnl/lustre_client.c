@@ -51,10 +51,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include <stdint.h>
+#include <stdbool.h>
 #include <limits.h>
 #include <string.h>
 #include <dirent.h>
 #include <coll/rbt.h>
+#include <coll/idx.h>
 #include <sys/queue.h>
 #include <time.h>
 #include <unistd.h>
@@ -67,10 +69,14 @@
 #define SAMP "lustre_client"
 #define LLITE_PATH "/proc/fs/lustre/llite"
 #define DEFAULT_SCHEMA_NAME "lustre_client"
+/* from lustre code */
+#define MAX_OBD_NAME 128
+#define LUSTRE_MAXFSNAME 8
 
 static ldmsd_msg_log_f log_fn;
-static char producer_name[LDMS_PRODUCER_NAME_MAX];
-static char schema_name[LDMS_SET_NAME_MAX];
+static char producer_name[LDMS_PRODUCER_NAME_MAX+1];
+static char schema_name[LDMS_SET_NAME_MAX+1];
+static char host_name[HOST_NAME_MAX+1];
 static uint64_t component_id;
 static time_t last_refresh;
 static time_t refresh_interval = 30;
@@ -133,62 +139,57 @@ static char *llite_stats_uint64_t_entries[] = {
 /*******************************************************************/
 /* ldms_metrict_by_name() employs a linear lookup and is verboten for
  * use by plugins in the main sample() loop.  This section section
- * implemants a faster lookup using the rbt structure, and offers
+ * implemants a faster lookup using the API from idx.[ch], and offers
  * alt_ldms_metric_by_name() as a limited alternative to the original.
  * Someday, perhaps ldms_metric_by_name() will be improved and this
  * section can be removed.
  */
-/* red-black tree root for metric index lookup table */
-static struct rbt metric_lookup_tree;
-struct metric_lookup_entry {
-        struct rbn node;
-        int index;
-};
+static idx_t metric_idx;
 
-static int metric_lookup_tree_insert(const char *name, int index)
+static int metric_idx_add(const char *name, int index)
 {
-        struct metric_lookup_entry *entry;
+        int *val;
+        int rc;
 
-        entry = malloc(sizeof(struct metric_lookup_entry));
-        if (entry == NULL) {
+        val = malloc(sizeof(val));
+        if (val == NULL) {
                 return ENOMEM;
         }
-        entry->index = index;
-        rbn_init(&entry->node, (char *)name);
-        rbt_ins(&metric_lookup_tree, &entry->node);
 
-        return 0;
+        *val = index;
+        rc = idx_add(metric_idx, (idx_key_t)name, strlen(name), val);
+
+        return rc;
 }
 
-static void metric_lookup_tree_destroy()
+static void metric_idx_create()
 {
-        struct rbn *rbn;
-        struct metric_lookup_entry *entry;
+        metric_idx = idx_create();
+}
 
-        while (!rbt_empty(&metric_lookup_tree)) {
-                rbn = rbt_min(&metric_lookup_tree);
-                entry = container_of(rbn, struct metric_lookup_entry, node);
-                rbt_del(&metric_lookup_tree, rbn);
-                free(entry);
-        }
+static void metric_idx_obj_free(void *obj, void *cb_arg)
+{
+        free(obj);
+}
+
+static void metric_idx_destroy()
+{
+        idx_traverse(metric_idx, metric_idx_obj_free, NULL);
+        idx_destroy(metric_idx);
 }
 
 /* "set" is unused in this function.  It is just there to allow this
    call to be a direct replacement for ldms_metric_by_name().  This plugin
-   only uses one schema, so there is only one global lookup table. */ 
+   only uses one schema, so there is only one global lookup index. */ 
 static int alt_ldms_metric_by_name(ldms_set_t set, const char *name)
 {
-        struct metric_lookup_entry *entry;
-        struct rbn *rbn;
+        int *val;
 
-        rbn = rbt_find(&metric_lookup_tree, name);
-        if (rbn == NULL) {
-                return -1;
-        }
-        entry = container_of(rbn, struct metric_lookup_entry, node);
+        val = idx_find(metric_idx, (idx_key_t)name, strlen(name));
 
-        return entry->index;
+        return *val;
 }
+
 /*******************************************************************/
 
 static int llite_general_schema_is_initialized()
@@ -209,13 +210,13 @@ static int llite_general_schema_init(const char *schema_name)
         sch = ldms_schema_new(schema_name);
         if (sch == NULL)
                 goto err1;
-        rc = ldms_schema_meta_array_add(sch, "hostname", LDMS_V_CHAR_ARRAY, 64);
+        rc = ldms_schema_meta_array_add(sch, "hostname", LDMS_V_CHAR_ARRAY, HOST_NAME_MAX+1);
         if (rc < 0)
                 goto err2;
-        rc = ldms_schema_meta_array_add(sch, "fs_name", LDMS_V_CHAR_ARRAY, 64);
+        rc = ldms_schema_meta_array_add(sch, "fs_name", LDMS_V_CHAR_ARRAY, LUSTRE_MAXFSNAME+1);
         if (rc < 0)
                 goto err2;
-        rc = ldms_schema_meta_array_add(sch, "llite", LDMS_V_CHAR_ARRAY, 64);
+        rc = ldms_schema_meta_array_add(sch, "llite", LDMS_V_CHAR_ARRAY, MAX_OBD_NAME);
         if (rc < 0)
                 goto err2;
 	rc = ldms_schema_meta_add(sch, "component_id", LDMS_V_U64);
@@ -231,7 +232,7 @@ static int llite_general_schema_init(const char *schema_name)
                                             LDMS_V_U64);
                 if (rc < 0)
                         goto err2;
-                rc = metric_lookup_tree_insert(llite_stats_uint64_t_entries[i], rc);
+                rc = metric_idx_add(llite_stats_uint64_t_entries[i], rc);
                 if (rc != 0) {
                         goto err2;
                 }
@@ -253,7 +254,7 @@ static void llite_general_schema_fini()
         if (llite_general_schema != NULL) {
                 ldms_schema_delete(llite_general_schema);
                 llite_general_schema = NULL;
-                metric_lookup_tree_destroy();
+                metric_idx_destroy();
         }
 }
 
@@ -402,7 +403,7 @@ static struct llite_data *llite_create(const char *llite_name, const char *based
                        llite->fs_name);
                 goto out6;
         }
-        llite->general_metric_set = llite_general_create(producer_name, producer_name,
+        llite->general_metric_set = llite_general_create(host_name, producer_name,
                                                          llite->fs_name, llite->name,
                                                          component_id);
         if (llite->general_metric_set == NULL)
@@ -454,6 +455,7 @@ static void llites_destroy()
    have not seen, and delete any that we no longer see. */
 static void llites_refresh()
 {
+        static bool already_missing = false;
         struct dirent *dirent;
         DIR *dir;
         struct rbt new_llite_tree;
@@ -469,10 +471,20 @@ static void llites_refresh()
 
         dir = opendir(LLITE_PATH);
         if (dir == NULL) {
-                log_fn(LDMSD_LWARNING, SAMP" unable to open llite dir %s\n",
-                       LLITE_PATH);
+                if (!already_missing) {
+                        log_fn(LDMSD_LWARNING, SAMP" unable to open llite dir %s\n",
+                               LLITE_PATH);
+                        already_missing = true;
+                }
                 return;
+        } else {
+                if (already_missing) {
+                        log_fn(LDMSD_LWARNING, SAMP" llite dir %s is now accesible\n",
+                               LLITE_PATH);
+                        already_missing = false;
+                }
         }
+
         while ((dirent = readdir(dir)) != NULL) {
                 struct rbn *rbn;
                 struct llite_data *llite;
@@ -630,9 +642,10 @@ struct ldmsd_plugin *get_plugin(ldmsd_msg_log_f pf)
         log_fn = pf;
         log_fn(LDMSD_LDEBUG, SAMP" get_plugin() called\n");
         rbt_init(&llite_tree, string_comparator);
-        rbt_init(&metric_lookup_tree, string_comparator);
+        metric_idx_create();
+        gethostname(host_name, sizeof(host_name));
         /* set the default producer name */
-        gethostname(producer_name, sizeof(producer_name));
+        strcpy(producer_name, host_name);
         /* set the default schema name */
         snprintf(schema_name, sizeof(schema_name), "%s", DEFAULT_SCHEMA_NAME);
 
