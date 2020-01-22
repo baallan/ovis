@@ -1,3 +1,13 @@
+This code does not yet include a sampler, but rather an library to produce
+canonical text files which can be efficiently sampled (and house-kept) for
+application authors to export:
+* progress metrics (aka iteration counters in most cases)
+* constrained log data
+* configuration value tables
+This allows us (ldmsd developers) to create samplers that securely read application
+data without applications directly linking ldmsd or opening ldmsd connections from
+application code.
+
 To read about this API sketch point a web browser at 
 
 https://baallan.github.io/ovis/
