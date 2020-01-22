@@ -1,7 +1,0 @@
-ACLOCAL_AMFLAGS = -I m4
-
-SUBDIRS =
-
-if ENABLE_SOS
-SUBDIRS += src
-endif
