@@ -149,6 +149,7 @@ dnl grptest will also build with --enable-ldms-test
 AM_CONDITIONAL([ENABLE_GRPTEST_LDMS_TEST], [test "x$ENABLE_LDMS_TEST_FALSE" = "x#" -o "x$ENABLE_GRPTEST_FALSE" = "x#"])
 
 dnl options for contributed samplers
+OPTION_DEFAULT_DISABLE([watch], [ENABLE_WATCH])
 OPTION_DEFAULT_DISABLE([ipmireader], [ENABLE_IPMIREADER])
 OPTION_DEFAULT_DISABLE([tutorial-sampler],[ENABLE_TUTORIAL_SAMPLER])
 
@@ -591,6 +592,7 @@ AC_CONFIG_FILES([Makefile src/Makefile src/core/Makefile
 		 src/contrib/sampler/Makefile
 		 src/contrib/sampler/ipmireader/Makefile
 		 src/contrib/sampler/tutorial/Makefile
+		 src/contrib/sampler/watch/Makefile
 		 src/ldmsd/Makefile
 		 src/ldmsd/test/Makefile
 		 scripts/Makefile

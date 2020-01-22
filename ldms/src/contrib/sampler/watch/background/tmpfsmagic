@@ -1,0 +1,25 @@
+Use the statfs syscall and see if the returned f_type field is TMPFS_MAGIC.
+
+Here's a small utility demonstrating this:
+
+#include <sys/vfs.h>                                                         
+#include <linux/magic.h>                                                     
+#include <stdio.h>                                                           
+
+int main(int argc, char** argv) {                                            
+  struct statfs info;                                                        
+  statfs(argv[1], &info);                                                    
+
+  if (info.f_type == TMPFS_MAGIC) {                                          
+    printf("It's tmpfs\n");                                                  
+    return 0;                                                                
+  } else {                                                                   
+    printf("It's not tmpfs\n");                                              
+    return 1;                                                                
+  }                                                                          
+}
+
+Example:
+
+$ ./isittmpfs /etc/passwd
+It's not tmpfs

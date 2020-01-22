@@ -15,5 +15,10 @@ endif
 SUBDIRS += $(MAYBE_TUTORIAL_SAMPLER)
 
 
+if ENABLE_WATCH
+    MAYBE_WATCH = watch
+endif
+SUBDIRS += $(MAYBE_WATCH)
+
 
 
