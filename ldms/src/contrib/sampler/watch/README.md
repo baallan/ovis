@@ -1,7 +1,6 @@
-To read about this API sketch, clone or download the project files, and then point
-a web browser at dox/html/index.html via
+To read about this API sketch point a web browser at 
 
-https://rawgit.com/baallan/ovis/ldms/src/contrib/watch/dox/html/index.html
+https://baallan.github.io/ovis/
 
 The example programs are:
 test\_log.c
