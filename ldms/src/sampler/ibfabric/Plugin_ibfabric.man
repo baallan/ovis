@@ -1,0 +1,100 @@
+.\" Manpage for Plugin_scibfabric2
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 7 "13 Sep 2017" "v3.5" "LDMS Plugin scibfabric2 man page"
+
+.SH NAME
+Plugin_scibfabric2 - man page for the LDMS scibfabric2 plugin
+
+.SH SYNOPSIS
+Within ldmsd_controller or a configuration file:
+.br
+config name=scibfabric2 [ <attr>=<value> ]
+
+.SH DESCRIPTION
+With LDMS (Lightweight Distributed Metric Service), plugins for the ldmsd (ldms daemon) are configured via ldmsd_controller
+or a configuration file. The scibfabric2 plugin provides port info from InfiniBand equipment.
+
+.SH CONFIGURATION ATTRIBUTE SYNTAX
+
+.TP
+.BR config
+name=<plugin_name> producer=<pname> instance=<instance> ca_name=<ca> ca_port=<port> (portfile=<portfile> | servername=<servername> serverport=<port> ) [schema=<sname>] [component_id=<compid>] [timing=<0/1/2>] [nodenamemap=<ibmap>] 
+.br
+configuration line
+.RS
+.TP
+name=<plugin_name>
+.br
+This MUST be scibfabric2.
+.TP
+producer=<pname>
+.br
+The producer string value.
+.TP
+instance=<set_name>
+.br
+The name of the metric set.
+.TP
+portfile=<portfile>
+.br
+The name of a file of LID/port specifications. See PORT FILE for format details.
+.TP
+servername=<servername> serverport=<port>
+.br
+The name and port of a delegation server that will provide the list of
+LIDs/ports to be measured. See ldms_ib_delegator(8) for details.
+.TP
+schema=<schema>
+.br
+Optional schema name. It is intended that the same sampler on different nodes with different metrics have a
+different schema. If not specified, it will default to `scibfabric2` and mismatches may cause bad storage plugin behavior.
+.TP
+component_id=<compid>
+.br
+Optional component identifier. Defaults to zero.
+.TP
+ca_name=<ca>
+.br
+The name of the host's IB interface to use for transmitting queries.
+.TP
+ca_port=<port>
+.br
+The port number to use, which must be active.
+.TP
+timing=<T>
+.br
+Disable timing (T=0), enable aggregate timing (T=1), or emable individual port timing(T=2).
+The metric set will contain sampling process timing metrics if T > 0. Timing should not be used in production deployments.
+.TP
+nodenamemap=<ibmap>
+.br
+The file name, as used by ibnetdiscover and opensm, of a mapping from IB GUIDs to short names of IB hardware items (switch, node, etc) suitable for use in composing metric names.
+.RE
+
+.SH PORT FILE
+The port file format will probably be lines something like:
+.nf
+sampler_host_name lid.[portrange] lid.[portrange]
+.fi
+until such time as we have nodenamemap. The portrange will be an integer expression
+in the style 1,5,7-9,13, without repeats, whitespace, reversed ranges, or overlapping ranges.
+When there is nodenamemap support, lid may be a short string equivalent to a GUID as mapped.
+Until then, LID is an integer in the range 0-65535.
+
+.SH BUGS
+The nodenamemap option is not yet supported.
+The portfile option is not yet supported.
+
+.SH EXAMPLES
+.PP
+Within ldmsd_controller or a configuration file:
+.nf
+load name=scibfabric2
+config name=scibfabric2 producer=compute1 instance=compute1/scibfabric2 component_id=1
+start name=scibfabric2 interval=1000000
+.fi
+
+.SH NOTES
+
+.SH SEE ALSO
+ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ib_delegator(8)

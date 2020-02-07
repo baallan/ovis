@@ -97,6 +97,10 @@ if ENABLE_LUSTRE
 SUBDIRS += lustre
 endif
 
+if ENABLE_IBFABRIC
+SUBDIRS += ibfabric
+endif
+
 if ENABLE_PAPI_SAMPLER
 SUBDIRS += papi
 endif
