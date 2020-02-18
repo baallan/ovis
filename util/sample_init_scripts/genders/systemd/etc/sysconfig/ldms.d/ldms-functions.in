@@ -132,7 +132,7 @@ check_auth_option () {
 		dietrace 1
 		;;
 	x)
-		logger -t $LTAG -p syslog.error -s "$0: LDMS_AUTH_TYPE is undefined.
+		logger -t $LTAG -p syslog.error -s "$0: LDMS_AUTH_TYPE is undefined."
 		dietrace 1
 		;;
 	esac
