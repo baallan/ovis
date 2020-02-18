@@ -21,7 +21,7 @@ if ENABLE_MY_PLUGIN
 libmy_plugin_la_SOURCES = my_plugin.c
 libmy_plugin_CFLAGS = $(AM_CFLAGS)
 libmy_plugin_la_LDFLAGS = $(AM_LDFLAGS) -module
-libmy_plugin_la_LIBADD = $(COMMON_LIBADD)
+libmy_plugin_la_LIBADD = $(COMMON_LIBADD) -L$(ovis_ldms_libdir)
 dist_man7_MANS += Plugin_my_plugin.man
 pkglib_LTLIBRARIES += libmy_plugin.la
 endif
