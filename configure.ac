@@ -303,6 +303,8 @@ AM_CONDITIONAL([ENABLE_GRPTEST_LDMS_TEST], [test "x$ENABLE_LDMS_TEST_FALSE" = "x
 dnl options for contributed samplers
 OPTION_DEFAULT_DISABLE([ipmireader], [ENABLE_IPMIREADER])
 OPTION_DEFAULT_DISABLE([tutorial-sampler],[ENABLE_TUTORIAL_SAMPLER])
+OPTION_DEFAULT_DISABLE([ldms-plugins-llnl],[ENABLE_LDMS_PLUGINS_LLNL])
+CONTRIB_LLNL
 
 dnl check for libcurl if influx is configured
 OPTION_DEFAULT_DISABLE([influx], [ENABLE_INFLUX])
@@ -760,6 +762,9 @@ ldms/src/sampler/examples/test_sampler/Makefile
 ldms/src/sampler/ibm_occ/Makefile
 ldms/src/sampler/syspapi/Makefile
 ldms/src/contrib/sampler/Makefile
+ldms/src/contrib/sampler/ldms-plugins-llnl/Makefile
+ldms/src/contrib/sampler/ldms-plugins-llnl/src/Makefile
+ldms/src/contrib/sampler/ldms-plugins-llnl/man/Makefile
 ldms/src/contrib/sampler/ipmireader/Makefile
 ldms/src/contrib/sampler/tutorial/Makefile
 ldms/src/third-plugins/Makefile

@@ -1,0 +1,8 @@
+EXTRA_DIST = COPYRIGHT LICENSE-BSD LICENSE-GPL NOTICE README.md
+
+docdir=$(datadir)/doc/ldms-plugins-llnl
+
+dist_doc_DATA = \
+COPYRIGHT LICENSE-BSD LICENSE-GPL NOTICE README.md VERSION
+
+SUBDIRS = src man
