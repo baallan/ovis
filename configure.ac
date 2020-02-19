@@ -761,9 +761,6 @@ ldms/src/sampler/examples/test_sampler/Makefile
 ldms/src/sampler/ibm_occ/Makefile
 ldms/src/sampler/syspapi/Makefile
 ldms/src/contrib/sampler/Makefile
-ldms/src/contrib/sampler/ldms-plugins-llnl/Makefile
-ldms/src/contrib/sampler/ldms-plugins-llnl/src/Makefile
-ldms/src/contrib/sampler/ldms-plugins-llnl/man/Makefile
 ldms/src/contrib/sampler/ipmireader/Makefile
 ldms/src/contrib/sampler/tutorial/Makefile
 ldms/src/third-plugins/Makefile
