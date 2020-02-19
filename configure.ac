@@ -303,7 +303,6 @@ AM_CONDITIONAL([ENABLE_GRPTEST_LDMS_TEST], [test "x$ENABLE_LDMS_TEST_FALSE" = "x
 dnl options for contributed samplers
 OPTION_DEFAULT_DISABLE([ipmireader], [ENABLE_IPMIREADER])
 OPTION_DEFAULT_DISABLE([tutorial-sampler],[ENABLE_TUTORIAL_SAMPLER])
-OPTION_DEFAULT_DISABLE([ldms-plugins-llnl],[ENABLE_LDMS_PLUGINS_LLNL])
 CONTRIB_LLNL
 
 dnl check for libcurl if influx is configured

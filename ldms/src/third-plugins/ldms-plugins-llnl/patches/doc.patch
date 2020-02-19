@@ -1,0 +1,14 @@
+diff --git a/Makefile.am b/Makefile.am
+index 68b9af6..f05792d 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -1,2 +1,8 @@
+-EXTRA_DIST = ldms-plugins-llnl.spec COPYRIGHT LICENSE-BSD LICENSE-GPL NOTICE README.md
++EXTRA_DIST = COPYRIGHT LICENSE-BSD LICENSE-GPL NOTICE README.md
++
++docdir=$(OVIS_DOC_DIR)/@PACKAGE@-@VERSION@
++
++dist_doc_DATA = \
++COPYRIGHT LICENSE-BSD LICENSE-GPL NOTICE README.md VERSION
++
+ SUBDIRS = src man
