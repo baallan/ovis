@@ -390,15 +390,20 @@ static int sample(struct ldmsd_sampler *self)
 		myFile = fopen(command[i], "r");
 		if (myFile == NULL)
 		{
-			msglog(LDMSD_LERROR, SAMP ": failed to open file\n");
+			msglog(LDMSD_LERROR, SAMP ": failed to open file %s\n",
+					command[i]);
 			rc = EINVAL;
 			edac_valid=0;
 			goto out;
 		}
+		errno = 0;
 		s = fgets(lineBuffer, sizeof(lineBuffer), myFile);
+		int en = errno;
 		if (!s) {
 			rc = EINVAL;
 			edac_valid=0;
+			msglog(LDMSD_LERROR, SAMP ": fgets failed on %s with errno %d\n",
+					command[i], en);
 			goto out;
 		}
 		rc = sscanf(lineBuffer, "%" PRIu64, &v.v_u64);
