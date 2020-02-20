@@ -3,7 +3,7 @@
 # See README.third-plugins.md
 #
 ACLOCAL_AMFLAGS = -I m4
-EXTRA_DIST = all-third.tar.gz
+EXTRA_DIST = all-third.tar.gz exclude-third.txt
 CLEANFILES =
 DISTCLEANFILES =
 THIRD_PLUGINS_DIRS=@THIRD_PLUGINS_DIRS@
