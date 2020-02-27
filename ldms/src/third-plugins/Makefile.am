@@ -29,7 +29,9 @@ all-third.tar.gz: $(srcdir)/*
 
 # this is where we do all third-plugins builds as the last step of our build.
 third-install-hook: third-dist-hook all-third.tar.gz
-	tar zxf ./all-third.tar.gz
+	if test "$(abs_srcdir) != $(abs_builddir); then \
+		tar zxf ./all-third.tar.gz; \
+	fi ; \
 	LDMS_CONFIG_SH=$(DESTDIR)$(libdir)/ovis-ldms-configvars.sh; \
 	LIB_CONFIG_SH=$(DESTDIR)$(libdir)/ovis-lib-configvars.sh; \
 	export LDMS_CONFIG_SH; \
