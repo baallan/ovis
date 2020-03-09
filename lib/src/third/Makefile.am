@@ -1,4 +1,4 @@
-EXTRA_DIST =
+EXTRA_DIST = papi-6.0.0.tar.gz
 lib_LTLIBRARIES = libovis_third.la
 # Here's where small 3rd party stuff with its own licenses and no
 # commonly available packaged libraries is kept.
