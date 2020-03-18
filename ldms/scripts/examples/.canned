@@ -24,6 +24,7 @@ rabbitl2remote
 rabbitv3
 renamecsv
 rollagain
+funcstore
 csvcheckattrs # one ok and one failed config_check
 vg_csv
 vg_sos

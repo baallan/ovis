@@ -537,13 +537,27 @@ static int __checkValidLine(const char* lbuf, const char* schema_name,
 //	       schema_name, metric_name, function_name, nmet, metric_csv,
 //	       scale, output);
 
+	if (rcl == EOF) {
+		const char *spc = lbuf;
+		while (*spc != '\0' && isspace(*spc)) {
+			spc++;
+		}
+		if (*spc == '\0') {
+			/* msglog(LDMSD_LDEBUG,"%s: (%d): Skipping empty line.\n", __FILE__, iter); */
+			return -1;
+		}
+		msglog(LDMSD_LWARNING,"%s: (line %d) Parsing argument failure in file <%s> rc=%d. Skipping\n",
+		       __FILE__, iter, lbuf, rcl);
+		return -1;
+	}
+
 	if ((strlen(schema_name) > 0) && (schema_name[0] == '#')){
 		// hashed lines are comments (means metric name cannot start with #)
 		return -1;
 	}
 
-	if (rcl != 7) {
-		msglog(LDMSD_LWARNING,"%s: (%d) Bad format in fct config file <%s> rc=%d. Skipping\n",
+	if (rcl != 7 ) {
+		msglog(LDMSD_LWARNING,"%s: (line %d) Not enough arguments in file <%s> rc=%d. Skipping\n",
 		       __FILE__, iter, lbuf, rcl);
 		return -1;
 	}
@@ -1147,8 +1161,10 @@ static int config(struct ldmsd_plugin *self, struct attr_value_list *kwl, struct
 	else
 		altheader = 0;
 
-	if (derivedconf)
+	if (derivedconf) {
 		free(derivedconf);
+		derivedconf = NULL;
+	}
 
 	if (dervalue)
 		derivedconf = strdup(dervalue);
@@ -1249,6 +1265,8 @@ static int print_header_from_store(struct function_store_handle *s_handle,
 			msglog(LDMSD_LERROR,"%s: derivedConfig failed for store_function_csv. \n",
 			       __FILE__);
 			return rc;
+		} else {
+			msglog(LDMSD_LDEBUG,"%s: function_csv parsed %s\n", __FILE__, derivedconf);
 		}
 	}
 
@@ -2641,6 +2659,31 @@ static int doFunc(ldms_set_t set, int* metric_arry,
 
 };
 
+static void destroy_datapoint(struct setdatapoint *dp, void *user)
+{
+	int numder = *((int*)user);
+	if (!dp)
+		return;
+	if (dp->datavals) {
+		int j;
+		for (j = 0; j < numder; j++){
+			if (dp->datavals[j].storevals) {
+				free(dp->datavals[j].storevals);
+				dp->datavals[j].storevals = NULL;
+			}
+			if (dp->datavals[j].returnvals) {
+				free(dp->datavals[j].returnvals);
+				dp->datavals[j].returnvals = NULL;
+			}
+		}
+	}
+	free(dp->datavals);
+	dp->datavals = NULL;
+	free(dp->ts);
+	dp->ts = NULL;
+	free(dp);
+}
+
 static int get_datapoint(idx_t* sets_idx, const char* instance_name,
 			 int numder, struct derived_data** der,
 			 int* numsets, struct setdatapoint** rdp, int* firsttime){
@@ -2991,17 +3034,17 @@ static void close_store(ldmsd_store_handle_t _s_handle)
 		s_handle->der[i] = NULL;
 	}
 
-	s_handle->numder = 0;
-
 	if (s_handle->sets_idx) {
-		//FIXME: need someway to iterate thru this to get the ptrs to free them
+		idx_traverse(s_handle->sets_idx, (idx_cb_fn_t)destroy_datapoint, &s_handle->numder);
 		idx_destroy(s_handle->sets_idx);
 	}
+
+	s_handle->numder = 0;
 
 	idx_delete(store_idx, s_handle->store_key, strlen(s_handle->store_key));
 
 	for (i = 0; i < nstorekeys; i++){
-		if (strcmp(storekeys[i], s_handle->store_key) == 0){
+		if (storekeys[i] && strcmp(storekeys[i], s_handle->store_key) == 0){
 			free(storekeys[i]);
 			storekeys[i] = 0;
 			//note the space is still in the array
@@ -3037,6 +3080,7 @@ static struct ldmsd_store store_function_csv = {
 struct ldmsd_plugin *get_plugin(ldmsd_msg_log_f pf)
 {
 	msglog = pf;
+	msglog(LDMSD_LDEBUG, "Loaded store plugin %s\n", store_function_csv.base.name);
 	return &store_function_csv.base;
 }
 
