@@ -156,6 +156,10 @@ extern char *dstrcat(dstring_t * dsPtr, const char *string, int length);
 extern char *dstrcat_int(dstring_t * dsPtr, int64_t);
 /** append formatted unsigned to dstring. */
 extern char *dstrcat_uint(dstring_t * dsPtr, uint64_t);
+/** append formatted double to dstring using fmt. Default format %21.17g if fmt is NULL. */
+extern char *dstrcat_double(dstring_t * dsPtr, double d, const char *fmt);
+/** append formatted unsigned to dstring using fmt. */
+extern char *dstrcat_uintf(dstring_t * dsPtr, uint64_t, const char *fmt);
 
 /*----------------------------------------------------------------------*/
 /**

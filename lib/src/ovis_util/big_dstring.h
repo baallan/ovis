@@ -75,6 +75,12 @@
 #include <assert.h>
 #undef DSTRING_STATIC_SIZE
 
+#ifdef __GNUC__
+#define BD_UNUSED __attribute__ ((unused))
+#else
+#define BD_UNUSED
+#endif
+
 /* big_dstring_t safely castable to dstring_t for functions
  * which do not rely on knowing DSTRING_STATIC_SIZE
  * (init, free, extract rely on DSTRING_STATIC_SIZE).
@@ -95,7 +101,7 @@ static inline char *bdstr_set(big_dstring_t *dsPtr, const char *string); \
 static inline char *bdstr_set_int(big_dstring_t *dsPtr, int64_t val); \
 static inline char *bdstrcat( big_dstring_t *dsPtr, const char * string, int len); \
 static inline void bdstr_trunc(big_dstring_t *dsPtr, int length); \
-static char *bdstr_extract(big_dstring_t *dsPtr); \
+static BD_UNUSED char *bdstr_extract(big_dstring_t *dsPtr); \
 static inline int bdstrlen(const big_dstring_t *dsPtr); \
 static inline int bdstrcurmaxlen(const big_dstring_t *dsPtr); \
 static inline const char *bdstrval(const big_dstring_t *dsPtr); \
@@ -126,7 +132,7 @@ static void bdstr_init(big_dstring_t *dsPtr) \
 } \
  \
  \
-static char *bdstr_extract(big_dstring_t *dsPtr) \
+static BD_UNUSED char *bdstr_extract(big_dstring_t *dsPtr) \
 { \
 	char *result; \
 	assert (NULL != dsPtr); \
@@ -156,6 +162,22 @@ static inline char *bdstrcat( big_dstring_t *dsPtr, \
                      int length) \
 {  \
 	return dstrcat((dstring_t*)dsPtr, string,length);  \
+}\
+static inline char *bdstrcat_int( big_dstring_t * dsPtr, int64_t i) \
+{  \
+	return dstrcat_int((dstring_t*)dsPtr, i);  \
+}\
+static inline char *bdstrcat_uint( big_dstring_t * dsPtr, uint64_t u) \
+{  \
+	return dstrcat_uint((dstring_t*)dsPtr, u);  \
+}\
+static inline char *bdstrcat_double( big_dstring_t * dsPtr, double d, const char *fmt) \
+{  \
+	return dstrcat_double((dstring_t*)dsPtr, d, fmt);  \
+}\
+static inline char *bdstrcat_uintf( big_dstring_t * dsPtr, uint64_t u, const char *fmt) \
+{  \
+	return dstrcat_uintf((dstring_t*)dsPtr, u, fmt);  \
 }\
 \
 static inline void bdstr_trunc(big_dstring_t *dsPtr, int length) \

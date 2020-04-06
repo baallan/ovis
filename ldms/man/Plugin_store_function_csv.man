@@ -22,7 +22,7 @@ the ldmsd_controller. The store_function_csv plugin is a CSV store.
 .SH CONFIGURATION ATTRIBUTE SYNTAX
 .TP
 .BR config
-name=<plugin_name> path=<path> derivedconf=<confname>[ altheader=<0/!0> ageusec=<ageusec> buffer=<0/1/N> buffertype=<3/4> rolltype=<rolltype> rollover=<rollover>] [flags_default=<0/1>] [show_time_flag=<0/1>]
+name=<plugin_name> path=<path> derivedconf=<confname>[ altheader=<0/!0> ageusec=<ageusec> buffer=<0/1/N> buffertype=<3/4> rolltype=<rolltype> rollover=<rollover>] [flags_default=<0/1>] [show_time_flag=<0/1>] [drop_flagged=<0/1>]
 
 .br
 ldmsd_controller configuration line
@@ -55,17 +55,13 @@ show_time_flag=<0/1>
 .br
 Include (1) or exclude (0) TimeFlag from the output data. If not specified, TimeFlag will be managed per the setting of flags_default.
 .TP
+drop_flagged=<0/1>
+.br
+Hide(0) or show(1) rows with errors detected in derivation. The default is 1. TimeFlag values are excluded from drop_flagged considerations.
+.TP
 ageusec=<ageusec>
 .br
 Set output data field Flag = 1 if the interval between two successive data reports for the same host's same metric set is greater than ageusec. (NOTE: in v3 this is now usec, not sec).
-.TP
-flags_default=<0/1>
-.br
-Hide(0) or show(1) .Flag fields indicating invalid derived data. The default is ignored if flagging is specified in the input line for a derived metric. The value of flags_default is 1 if not configured.
-.TP
-show_time_flag=<0/1>
-.br
-Hide(0) or show(1) TimeFlag. The default is 1 and is overriden by flags_default unless show_time_flag is set.
 .TP
 buffer=<0/1/N>
 .br

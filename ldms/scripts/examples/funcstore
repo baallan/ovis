@@ -70,11 +70,11 @@ procnetdev tx_bytes_rate#ens33 RATE 1 tx_bytes#ens33 1 1 0
 
 EOF
 
-#vgon
+vgon
 #VGARGS="--track-origins=yes --leak-check=full --show-leak-kinds=all --trace-children=yes"
-#VGARGS="--tool=drd --trace-mutex=yes "
+VGARGS="--tool=drd --trace-mutex=yes "
 LDMSD -p prolog.jobidinfo `seq 2`
-#vgoff
+vgoff
 LDMS_LS 1 -lv
 LDMS_LS 2
 SLEEP 11

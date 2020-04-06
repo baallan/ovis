@@ -217,6 +217,22 @@ char *dstrcat_uint(dstring_t * dsPtr, uint64_t val)
 
 }
 
+char *dstrcat_uintf(dstring_t * dsPtr, uint64_t val, const char *fmt)
+{
+	char string[FMT_INT64_LEN];
+	sprintf(string, fmt, val);
+	return dstrcat(dsPtr, string, DSTRING_ALL);
+
+}
+
+char *dstrcat_double(dstring_t * dsPtr, double val, const char *fmt)
+{
+	char string[FMT_INT64_LEN];
+	sprintf(string, fmt ? fmt : "%21.17g", val);
+	return dstrcat(dsPtr, string, DSTRING_ALL);
+
+}
+
 char *dstrcat(dstring_t * dsPtr, const char *string, int length)
 {
 	size_t input_length = 0;

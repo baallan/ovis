@@ -66,15 +66,29 @@
 #include <errno.h>
 #include <unistd.h>
 #include <coll/idx.h>
+#include "ovis_util/big_dstring.h"
+BIG_DSTRING_TYPE(16384);
 #include "ldms.h"
 #include "ldmsd.h"
 #include "store_common.h"
 
+#if 0
 #define TV_SEC_COL    0
 #define TV_USEC_COL    1
 #define GROUP_COL    2
 #define VALUE_COL    3
 
+#define dsinit(ds) \
+	big_dstring_t ds; \
+	bdstr_init(&ds)
+
+#define dscat(ds,char_star_x) \
+	bdstrcat(&ds, char_star_x, DSTRING_ALL)
+
+#define dsdone(ds) \
+	bdstr_extract(&ds)
+
+#endif
 
 static int buffer_type = 1; /* autobuffering */
 static int buffer_sz = 0;
@@ -95,6 +109,7 @@ static int rollover;
 static int rolltype;
 static int flags_default = 1; // set to 0 to suppress all unrequested flags
 static int show_time_flag = 1; // set to 0 to suppress all unrequested flags
+static int drop_flagged = 0; // set to 1 to suppress flagged data rows
 /** ROLLTYPES documents rolltype and is used in help output. Also used for buffering. */
 #define ROLLTYPES \
 "                     1: wake approximately every rollover seconds and roll.\n" \
@@ -266,7 +281,7 @@ struct dinfo{ //values of the derived metrics, updated as the calculations go al
 	uint64_t* storevals;
 	uint64_t* returnvals;
 	int storevalid; //flag for if this is valid for dependent calculations.
-	int returnvalid; //flag for if this is valid for dependent calculations.
+	unsigned int returnvalid; //flag for if this is valid for dependent calculations.
 };
 
 struct setdatapoint{ //one of these for each instance for each schema
@@ -331,6 +346,7 @@ struct function_store_handle { //these are per-schema
 	int64_t lastflush;
 	int64_t store_count;
 	int64_t byte_count;
+	big_dstring_t line_out;
 };
 
 /******/
@@ -1122,6 +1138,22 @@ static int config(struct ldmsd_plugin *self, struct attr_value_list *kwl, struct
 		show_time_flag = 0;
 	}
 
+	value = av_value(avl, "drop_flagged");
+	if (value) {
+		switch(value[0]) {
+		case '0':
+			drop_flagged = 0;
+			break;
+		case '1':
+			drop_flagged = 1;
+			break;
+		default:
+			msglog(LDMSD_LERROR, PNAME ": config: drop_flagged must be 0 or 1\n");
+			pthread_mutex_unlock(&cfg_lock);
+			return EINVAL;
+		}
+	}
+
 	value = av_value(avl, "show_time_flag");
 	if (value) {
 		switch(value[0]) {
@@ -1261,10 +1293,14 @@ static void term(struct ldmsd_plugin *self)
 	//FIXME: update this for the free's.
 	//Keep in mind restart and what vals have to be kept (if any).
 
-	if (root_path)
+	if (root_path) {
 		free(root_path);
-	if (derivedconf)
+		root_path = NULL;
+	}
+	if (derivedconf) {
 		free(derivedconf);
+		derivedconf = NULL;
+	}
 }
 
 static const char *usage(struct ldmsd_plugin *self)
@@ -1414,6 +1450,7 @@ open_store(struct ldmsd_store *s, const char *container, const char* schema,
 			goto out;
 		s_handle->ucontext = ucontext;
 		s_handle->store = s;
+		bdstr_init(&(s_handle->line_out));
 
 		s_handle->sets_idx = idx_create();
 		if (!(s_handle->sets_idx))
@@ -1580,6 +1617,7 @@ open_store(struct ldmsd_store *s, const char *container, const char* schema,
 	pthread_mutex_destroy(&s_handle->lock);
 
  err1: //NO sets_idx
+	bdstr_free(&(s_handle->line_out));
 	free(s_handle);
 	s_handle = NULL;
 
@@ -2009,7 +2047,7 @@ static int doFunc(ldms_set_t set, int* metric_arry,
 	int dim = dd->dim;
 	int idx = dd->idx;
 	uint64_t* retvals = dp->datavals[idx].returnvals;
-	int* retvalid = &(dp->datavals[idx].returnvalid);
+	unsigned int* retvalid = &(dp->datavals[idx].returnvalid);
 	uint64_t* storevals = dp->datavals[idx].storevals;
 	int* storevalid = &(dp->datavals[idx].storevalid);
 
@@ -2856,6 +2894,24 @@ err:
 };
 
 
+/* Requires scope in which m is a bdstring pointer and estr
+ * is an error handling label.
+ * Appends literal STR to m. */
+#define CHKLIT(STR) \
+	if (!bdstrcat(m, STR, sizeof(STR))) goto estr
+
+/* Requires scope in which m is a bdstring pointer and estr
+ * is an error handling label.
+ * Appends pointer STR to m. */
+#define CHKSTR(STR) \
+	if (!bdstrcat(m, STR, strlen(STR))) goto estr
+
+/* Requires scope in which m is a bdstring pointer and estr
+ * is an error handling label.
+ * Appends pointer STR to m. */
+#define CHKINT(IVAL) \
+	if (!bdstrcat_uint(m, IVAL)) goto estr
+
 static int
 store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t metric_count)
 {
@@ -2892,6 +2948,9 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 #endif
 		return EPERM;
 	}
+
+	big_dstring_t *m = &(s_handle->line_out);
+	bdstr_trunc(m, 0);
 
 	/* Keeping print header here for compatibility with the other.*/
 	switch (s_handle->printheader){
@@ -2983,6 +3042,8 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 		jobid = 0;
 
 	if (!skip){
+#define USEFILE 0
+#if USEFILE
 		/* format: #Time, Time_usec, DT, DT_usec */
 		fprintf(s_handle->file, "%"PRIu32".%06"PRIu32 ",%"PRIu32,
 			ts->sec, ts->usec, ts->usec);
@@ -2998,9 +3059,35 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 
 		fprintf(s_handle->file, ",%"PRIu64",%"PRIu64,
 			compid, jobid);
+#else
+		/* format: #Time, Time_usec, DT, DT_usec */
+		CHKINT((uint64_t)ts->sec);
+		CHKLIT(".");
+		if (!bdstrcat_uintf(m, (uint64_t)ts->usec, "%06"PRIu64)) goto estr;
+		CHKLIT(",");
+		CHKINT((uint64_t)ts->usec);
+		CHKLIT(",");
+		CHKINT((uint64_t)diff.tv_sec);
+		CHKLIT(".");
+		if (!bdstrcat_uintf(m, (uint64_t)diff.tv_usec, "%06"PRIu64)) goto estr;
+		CHKLIT(",");
+		CHKINT((uint64_t)diff.tv_usec);
+
+		if (pname != NULL){
+			CHKLIT(",");
+			CHKSTR(pname);
+		} else {
+			CHKLIT(",");
+		}
+
+		CHKLIT(",");
+		CHKINT(compid);
+		CHKLIT(",");
+		CHKINT(jobid);
+#endif
 	}
 	//always get the vals because may need the stored value, even if skip this time
-
+	unsigned all_ok = 1;
 	for (i = 0; i < s_handle->numder; i++){ //go thru all the vals....only write the writeout vals
 
 		int rvalid;
@@ -3023,6 +3110,7 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 			if (!skip && s_handle->der[i]->writeout){
 				struct dinfo* di = &(dp->datavals[i]);
 				for (j = 0; j < di->dim; j++) {
+#if USEFILE
 					rc = fprintf(s_handle->file, ",%" PRIu64, di->returnvals[j]);
 					if (rc < 0) {
 						msglog(LDMSD_LERROR,"%s: Error %d writing to '%s'\n",
@@ -3032,14 +3120,25 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 					} else {
 						s_handle->byte_count += rc;
 					}
+#else
+					CHKLIT(",");
+					CHKINT(di->returnvals[j]);
+#endif
+					if (!di->returnvalid)
+						all_ok = 0;
 				}
 				if (s_handle->der[i]->show_flag) {
-					rc = fprintf(s_handle->file, ",%d", (!di->returnvalid));
+#if USEFILE
+					rc = fprintf(s_handle->file, ",%u", (!di->returnvalid));
 					if (rc < 0)
 						msglog(LDMSD_LERROR,"%s: Error %d writing to '%s'\n",
 						       PNAME, rc, s_handle->path);
 					else
 						s_handle->byte_count += rc;
+#else
+					CHKLIT(",");
+					CHKINT(!di->returnvalid);
+#endif
 				}
 			}
 		}
@@ -3054,10 +3153,23 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 			setflagtime = 1;
 
 	if (!skip){
-		if (show_time_flag)
+		if (show_time_flag) {
+#if USEFILE
 			fprintf(s_handle->file, ",%d", setflagtime); //NOTE: currently only setting flag based on time
+		}
 		fprintf(s_handle->file, "\n");
 		s_handle->byte_count += 1;
+#else
+			CHKLIT(",");
+			CHKINT(setflagtime);
+		}
+		CHKLIT("\n");
+		if (all_ok) {
+			s_handle->byte_count += bdstrlen(m);
+			fprintf(s_handle->file, "%s", DSTRVAL(m));
+		}
+		
+#endif
 		s_handle->store_count++;
 
 		if ((s_handle->buffer_type == 3) &&
@@ -3076,6 +3188,7 @@ store(ldmsd_store_handle_t _s_handle, ldms_set_t set, int *metric_arry, size_t m
 			fsync(fileno(s_handle->file));
 		}
 	}
+estr: /* jump target for error cases */
 
 	pthread_mutex_unlock(&s_handle->lock);
 #ifdef SFC_LOCK_DEBUG
@@ -3172,6 +3285,7 @@ static void close_store(ldmsd_store_handle_t _s_handle)
 		free(s_handle->schema);
 	if (s_handle->store_key)
 		free(s_handle->store_key);
+	bdstr_free(&(s_handle->line_out));
 	pthread_mutex_unlock(&s_handle->lock);
 	pthread_mutex_destroy(&s_handle->lock);
 	pthread_mutex_unlock(&cfg_lock);
