@@ -336,7 +336,7 @@ static int schedule_set_updates(ldmsd_prdcr_set_t prd_set, ldmsd_updtr_task_t ta
 {
 	int rc = 0;
 	int flags;
-	char *op_s;
+	char *op_s = "skipped doing anything";
 	ldmsd_prdcr_set_t pset;
 	ldmsd_updtr_t updtr = task->updtr;
 	struct ldmsd_group_traverse_ctxt ctxt;
@@ -675,7 +675,7 @@ static void cancel_prdcr_updates(ldmsd_updtr_t updtr,
 			cancel_set_updates(prd_set, updtr);
 			continue;
 		}
-		rc = 1;
+
 		if (match->selector == LDMSD_NAME_MATCH_INST_NAME)
 			str = prd_set->inst_name;
 		else
@@ -782,6 +782,7 @@ static void __updtr_task_tree_cleanup(ldmsd_updtr_t updtr)
 	}
 	LIST_FOREACH(task, &unused_task_list, entry) {
 		ldmsd_task_join(&task->task);
+		LIST_REMOVE(task, entry);
 		updtr_task_del(task);
 	}
 }
@@ -1325,9 +1326,10 @@ out_1:
 ldmsd_prdcr_ref_t prdcr_ref_new(ldmsd_prdcr_t prdcr)
 {
 	ldmsd_prdcr_ref_t ref = calloc(1, sizeof *ref);
-	if (ref)
+	if (ref) {
 		ref->prdcr = ldmsd_prdcr_get(prdcr);
-	rbn_init(&ref->rbn, prdcr->obj.name);
+		rbn_init(&ref->rbn, prdcr->obj.name);
+	}
 	return ref;
 }
 
