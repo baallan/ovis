@@ -386,11 +386,11 @@ void print_cb(ldms_t t, ldms_set_t s, int rc, void *arg)
 	struct ldms_timestamp _ts = ldms_transaction_timestamp_get(s);
 	struct ldms_timestamp const *ts = &_ts;
 	int consistent = ldms_set_is_consistent(s);
-	struct tm *tm;
+	struct tm tm;
 	char dtsz[200];
 	time_t ti = ts->sec;
-	tm = localtime(&ti);
-	strftime(dtsz, sizeof(dtsz), "%a %b %d %H:%M:%S %Y %z", tm);
+	localtime_r(&ti, &tm);
+	strftime(dtsz, sizeof(dtsz), "%a %b %d %H:%M:%S %Y %z", &tm);
 
 	printf("%s: %s, last update: %s [%dus] ",
 	       ldms_set_instance_name_get(s),
@@ -706,6 +706,10 @@ int main(int argc, char *argv[])
 			break;
 		case 'h':
 			hostname = strdup(optarg);
+			if (!hostname) {
+				printf("ERROR: out of memory\n");
+				exit(1);
+			}
 			break;
 		case 'p':
 			ptmp = atol(optarg);
@@ -726,12 +730,20 @@ int main(int argc, char *argv[])
 			break;
 		case 'x':
 			xprt = strdup(optarg);
+			if (!xprt) {
+				printf("ERROR: out of memory\n"); 
+				exit(1);
+			}
 			break;
 		case 'w':
 			waitsecs = atoi(optarg);
 			break;
 		case 'm':
 			mem_sz = strdup(optarg);
+			if (!mem_sz) {
+				printf("ERROR: out of memory\n");
+				exit(1);
+			}
 			break;
 		case 'V':
 			ldms_version_get(&version);
