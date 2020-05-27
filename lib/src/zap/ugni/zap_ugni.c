@@ -1363,6 +1363,8 @@ static void __deliver_ev(struct z_ugni_ep *uep)
 	 * the disconnect path in ugni_sock_event() has already prep conn_ev for us.
 	 */
 	/* Sending DISCONNECTED event to application */
+	close(uep->sock);
+	uep->sock = -1;
 	uep->ep.cb((void*)uep, &uep->conn_ev);
 	zap_put_ep(&uep->ep);
 }
