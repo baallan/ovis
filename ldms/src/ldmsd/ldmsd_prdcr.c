@@ -491,10 +491,35 @@ static int __prdcr_subscribe(ldmsd_prdcr_t prdcr)
 static void __prdcr_remote_set_delete(ldmsd_prdcr_t prdcr, ldms_set_t set)
 {
 	ldmsd_prdcr_set_t prdcr_set;
-	if (set) {
-		prdcr_set = ldmsd_prdcr_set_find(prdcr, ldms_set_instance_name_get(set));
-		prdcr_reset_set(prdcr, prdcr_set);
+	if (!set)
+		return;
+	prdcr_set = ldmsd_prdcr_set_find(prdcr, ldms_set_instance_name_get(set));
+	pthread_mutex_lock(&prdcr_set->lock);
+	assert(prdcr_set->ref_count);
+	switch (prdcr_set->state) {
+	case LDMSD_PRDCR_SET_STATE_START:
+		ldmsd_log(LDMSD_LERROR,
+			  "Deleting %s in the START state\n",
+			  prdcr_set->inst_name);
+		break;
+	case LDMSD_PRDCR_SET_STATE_LOOKUP:
+		ldmsd_log(LDMSD_LERROR,
+			  "Deleting %s in the LOOKUP state\n",
+			  prdcr_set->inst_name);
+		break;
+	case LDMSD_PRDCR_SET_STATE_READY:
+		ldmsd_log(LDMSD_LERROR,
+			  "Deleting %s in the READY state\n",
+			  prdcr_set->inst_name);
+		break;
+	case LDMSD_PRDCR_SET_STATE_UPDATING:
+		ldmsd_log(LDMSD_LERROR,
+			  "Deleting %s in the UPDATING state\n",
+			  prdcr_set->inst_name);
+		break;
 	}
+	pthread_mutex_unlock(&prdcr_set->lock);
+	prdcr_reset_set(prdcr, prdcr_set);
 }
 
 static void prdcr_connect_cb(ldms_t x, ldms_xprt_event_t e, void *cb_arg)

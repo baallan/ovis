@@ -423,20 +423,6 @@ static void __ldms_drop_rbd_set_refs(struct ldms_rbuf_desc *rbd)
 	LIST_REMOVE(rbd, set_link);
 	ref_put(&rbd->ref, "set_rbd_list");
 	rbd->set = NULL;
-	switch (rbd->type) {
-	case LDMS_RBD_LOCAL:
-		ref_put(&set->ref, "share_lookup");
-		ref_put(&rbd->ref, "share_lookup");
-		break;
-	case LDMS_RBD_INITIATOR:
-		ref_put(&set->ref, "rendezvous_lookup");
-		ref_put(&rbd->ref, "rendezvous_lookup");
-		break;
-	case LDMS_RBD_TARGET:
-		ref_put(&set->ref, "rendezvous_push");
-		ref_put(&rbd->ref, "rendezvous_push");
-		break;
-	}
 }
 
 void __ldms_xprt_resource_free(struct ldms_xprt *x)
@@ -2011,7 +1997,7 @@ static void __handle_lookup(ldms_t x, struct ldms_context *ctxt,
 		goto ctxt_cleanup;
 	if (ev->status != ZAP_ERR_OK) {
 		status = EREMOTEIO;
-#ifdef DEBUG
+#if 1 // def DEBUG
 		x->log("DEBUG: %s: lookup read error: zap error %d. "
 			"ldms lookup status %d\n",
 			ldms_set_instance_name_get(ctxt->lu_read.s),
@@ -3032,6 +3018,7 @@ void ldms_xprt_set_delete(ldms_set_t s, ldms_set_delete_cb_t cb_fn, void *cb_arg
 {
 	struct ldms_request *req;
 	struct ldms_rbuf_desc *rbd, *next_rbd;
+	ldms_t xprt;
 	struct ldms_context *ctxt;
 	struct ldms_set *set = s->set;
 	size_t len;
@@ -3039,21 +3026,34 @@ void ldms_xprt_set_delete(ldms_set_t s, ldms_set_delete_cb_t cb_fn, void *cb_arg
 	pthread_mutex_lock(&set->lock);
 	rbd = LIST_FIRST(&set->local_rbd_list);
 	while (rbd) {
+		xprt = rbd->xprt;
 		next_rbd = LIST_NEXT(rbd, set_link);
 		LIST_REMOVE(rbd, set_link);
-		if (!rbd->xprt)
+		if (!xprt)
 			goto next;
+
+		/* Destroy the map so we don't accept remote read requests */
+		pthread_mutex_lock(&xprt->lock);
+		/* Make certain we didn't lose a disconnect race */
+		if (rbd->xprt) {
+			__ldms_rbd_xprt_release(rbd);
+		} else {
+			pthread_mutex_unlock(&xprt->lock);
+			goto next;
+		}
+
 		ctxt = __ldms_alloc_ctxt
-			(rbd->xprt,
+			(xprt,
 			 sizeof(struct ldms_request) + sizeof(struct ldms_context),
 			 LDMS_CONTEXT_SET_DELETE,
 			 rbd, cb_fn, cb_arg);
 		req = (struct ldms_request *)(ctxt + 1);
 		len = format_set_delete_req(req, (uint64_t)(unsigned long)ctxt,
 					    ldms_set_instance_name_get(s));
-		rc = zap_send(rbd->xprt->zap_ep, req, len);
+		rc = zap_send(xprt->zap_ep, req, len);
+		pthread_mutex_unlock(&xprt->lock);
 		if (rc)
-			__ldms_free_ctxt(rbd->xprt, ctxt);
+			__ldms_free_ctxt(xprt, ctxt);
 	next:
 		ref_put(&rbd->ref, "set_rbd_list");
 		rbd->set = NULL;

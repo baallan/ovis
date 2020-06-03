@@ -439,6 +439,8 @@ __record_set(const char *instance_name,
 {
 	struct ldms_set *set;
 
+	sh->signature = 0xdeadbeef;
+	dh->signature = 0xdeadbeef;
 	set = __ldms_find_local_set(instance_name);
 	if (set) {
 		ref_put(&set->ref, "__ldms_find_local_set");

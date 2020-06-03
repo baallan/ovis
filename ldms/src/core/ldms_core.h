@@ -127,6 +127,7 @@ struct ldms_transaction {
 };
 
 struct ldms_data_hdr {
+	uint64_t signature;  /* deadbeef */
 	struct ldms_transaction trans;
 	uint32_t pad;
 	uint64_t gn;		/* Metric-value generation number */
@@ -184,6 +185,7 @@ void ldms_version_get(struct ldms_version *v);
 	((version).flags == LDMS_VERSION_FLAGS) )
 
 struct ldms_set_hdr {
+	uint64_t signature;  /* deadbeef */
 	/* The unique metric set producer name */
 	char producer_name[LDMS_PRODUCER_NAME_MAX];
 	uint64_t meta_gn;	/* Meta-data generation number */

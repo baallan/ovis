@@ -615,6 +615,7 @@ static void process_sep_msg_read_req(struct z_sock_ep *sep)
 		rmsg.data_len = msg->data_len; /* Still in BE */
 
 	z_sock_hdr_init(&rmsg.hdr, msg->hdr.xid, SOCK_MSG_READ_RESP, sizeof(rmsg) + data_len, msg->hdr.ctxt);
+	assert(*(uint64_t*)src == 0xdeadbeef);
 	if (__sock_send_msg(sep, &rmsg.hdr, sizeof(rmsg), src, data_len))
 		shutdown(sep->sock, SHUT_RDWR);
 }
@@ -673,6 +674,7 @@ static void process_sep_msg_read_resp(struct z_sock_ep *sep)
 					   data_len, 0);
 		switch (rc) {
 		case 0:
+			assert(*(uint64_t *)msg->data == 0xdeadbeef);
 			memcpy(io->dst_ptr, msg->data, data_len);
 			break;
 		case EACCES:
@@ -690,7 +692,7 @@ static void process_sep_msg_read_resp(struct z_sock_ep *sep)
 	struct zap_event ev = {
 		.type = ZAP_EVENT_READ_COMPLETE,
 		.status = rc,
-		.context = (void*) msg->hdr.ctxt
+		.context = (void*) msg->hdr.ctxt,
 	};
 	sep->ep.cb((void*)sep, &ev);
 }

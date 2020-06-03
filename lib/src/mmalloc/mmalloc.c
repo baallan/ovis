@@ -205,7 +205,9 @@ void *mm_alloc(size_t size)
 	p->count = count;
 	p->pfx = p;
 	pthread_mutex_unlock(&mmr->lock);
-	return ++p;
+	p += 1;
+	memset(p, 0xaa, size - sizeof(*p));
+	return p;
 }
 
 void mm_free(void *d)
@@ -218,7 +220,7 @@ void mm_free(void *d)
 	struct rbn *rbn;
 
 	p --;
-
+	memset(d, 0xee, (p->count << mmr->grain_bits) - sizeof(*p));
 	pthread_mutex_lock(&mmr->lock);
 	/* See if we can coalesce with our lesser sibling */
 	rbn = rbt_find_glb(&mmr->addr_tree, &p->pfx);
