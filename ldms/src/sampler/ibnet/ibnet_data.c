@@ -1,3 +1,59 @@
+/*
+ * Copyright (c) 2020 National Technology & Engineering Solutions
+ * of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with
+ * NTESS, the U.S. Government retains certain rights in this software.
+ *
+ * This software is available to you under a choice of one of two
+ * licenses.  You may choose to be licensed under the terms of the GNU
+ * General Public License (GPL) Version 2, available from the file
+ * COPYING in the main directory of this source tree, or the BSD-type
+ * license below:
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ *      Redistributions of source code must retain the above copyright
+ *      notice, this list of conditions and the following disclaimer.
+ *
+ *      Redistributions in binary form must reproduce the above
+ *      copyright notice, this list of conditions and the following
+ *      disclaimer in the documentation and/or other materials provided
+ *      with the distribution.
+ *
+ *      Neither the name of Sandia nor the names of any contributors may
+ *      be used to endorse or promote products derived from this software
+ *      without specific prior written permission.
+ *
+ *      Neither the name of Open Grid Computing nor the names of any
+ *      contributors may be used to endorse or promote products derived
+ *      from this software without specific prior written permission.
+ *
+ *      Modified source versions must be plainly marked as such, and
+ *      must not be misrepresented as being the original software.
+ *
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * infiniband network port metrics sampler
+ */
+
+/* IF compiled with -DMAIN, the ldmsd-dependent code is omitted, leaving
+ * a utility which generates the same schema name as the plugin will use
+ * if given the same config arguments.
+ */
 
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -69,16 +125,6 @@ struct counter_range cr_default[] = {
 
 static const size_t cr_count = sizeof(cr_default) / sizeof(cr_default[0] ) ;
 #define CR_COUNT sizeof(cr_default) / sizeof(cr_default[0] )
-
-static void dump_cr(struct counter_range *cr)
-{
-	size_t i;
-	for (i = 0; i < cr_count; i++)
-		printf("%zu: %d, %d, %d, '%s', %d, %u, %u, %d\n", i,
-			(int)cr[i].enabled, (int)cr[i].lo, (int)cr[i].hi,
-			cr[i].subset, cr[i].id, (unsigned)cr[i].mask_check,
-			cr[i].mask_check2, cr[i].lo_index);
-}
 
 /**
  * Infiniband port representation and context.
@@ -183,6 +229,7 @@ static const char *ibnet_opts[] = {
 	"schema",
 	"instance",
 	"producer",
+	"component_id",
 	"uid",
 	"gid",
 	"perm",
@@ -194,6 +241,10 @@ static const char *ibnet_words[] = {
 	NULL
 };
 
+static int ibnet_data_cr_opt_parse(struct ibnet_data *d, const char *conf);
+static const char *compute_schema_suffix(struct ibnet_data *d);
+
+#ifndef MAIN
 static int ibnet_data_schemas_init(struct ibnet_data *d,
 	const char *port_schema_name, const char *timing_schema_name);
 
@@ -201,18 +252,28 @@ static int ibnet_data_sets_init(struct ibnet_data *d,
 	const char *port_schema_name, const char *timing_producer,
 	const char *timing_instance_name);
 
-static int ibnet_data_cr_opt_parse(struct ibnet_data *d, const char *conf);
-
 static int parse_lid_file(struct ibnet_data *d, const char *lidfile);
 
 static int add_lid(struct ibnet_data *d, uint16_t lid_no, uint64_t guid,
 	char *devname, int nports, int *ports);
-
 static void ibnet_data_port_destroy(struct ib_port *port);
-
 static void port_query(struct ibnet_data *d, struct ib_port *port);
 static void port_decode(struct ibnet_data *d, struct ib_port *port);
-static const char *compute_schema_suffix(struct ibnet_data *d);
+#else
+char *psname[2] = { NULL };
+#endif
+
+static void dump_cr(struct counter_range *cr, struct ibnet_data *d)
+{
+	size_t i;
+	for (i = 0; i < cr_count; i++)
+		d->log(LDMSD_LDEBUG, SAMP 
+			" row %zu: enabled %d, lo %d, hi %d, subset '%s',"
+			" id %d, check %u, check2 %u, lo_index %d\n", i,
+			(int)cr[i].enabled, (int)cr[i].lo, (int)cr[i].hi,
+			cr[i].subset, cr[i].id, (unsigned)cr[i].mask_check,
+			cr[i].mask_check2, cr[i].lo_index);
+}
 
 char *ibnet_data_usage() {
 	char *r;
@@ -227,8 +288,8 @@ char *ibnet_data_usage() {
 	"    hca	  local interface name (required).\n"
 	"    num	  port number on local hca. (default 1)\n"
 	"    nnmap	full path of file with guid:description pairs as used (optional)\n"
+	"		with --node-name-map in ibnetdiscover.\n"
 	"    timeopt      0:no timing data, 1:bulk only, 2:port and bulk.\n"
-	"		 with --node-name-map in ibnetdiscover.\n"
 	"    producer     A unique name for the host providing the timing data (default $HOSTNAME)\n"
 	"    instance     A unique name for the timing metric set (default $HOSTNAME/" SAMP ")\n"
 	"    component_id A unique number for the component being monitoring, Defaults to zero.\n"
@@ -244,8 +305,14 @@ char *ibnet_data_usage() {
 	dstr_set(&ds, base);
 	size_t i;
 	for (i = 0; i < cr_count; i++) {
+		if (cr_default[i].id == GSI_CONT) 
+			continue;
 		dstrcat(&ds, "\t", 1);
 		dstrcat(&ds, cr_default[i].subset, DSTRING_ALL);
+		if (cr_default[i].enabled == 0)
+			dstrcat(&ds, "\t\t(default disabled)", DSTRING_ALL);
+		else
+			dstrcat(&ds, "\t\t(default enabled)", DSTRING_ALL);
 		dstrcat(&ds, "\n", 1);
 	}
 
@@ -281,26 +348,36 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 	/* optional debug */
 	if (av_idx_of(kwl, "debug") != -1)
 		d->debug = 1;
+	d->log(LDMSD_LDEBUG, SAMP " debug=%d\n", d->debug);
 
+#define LENCHECK(v, n) \
+	const char *v = av_value(avl, n); \
+	if (v && strlen(v) == 0) { \
+		errno = EINVAL; \
+		d->log(LDMSD_LERROR, SAMP " needs " n "=<something>\n" ); \
+		goto err; \
+	}
 	/* required */
-	const char * cname = av_value(avl, "port-name");
-	const char * srclist = av_value(avl, "source-list");
+	LENCHECK(cname, "port-name");
+	LENCHECK(srclist, "source-list");
 
 	/* optional */
-	const char * conf = av_value(avl, "metric-conf");
-	const char * lidnames = av_value(avl, "node-name-map");
-	const char * cid = av_value(avl, LDMSD_COMPID);
-	const char * cnum = av_value(avl, "port-number");
-	const char * sbase = av_value(avl, "schema");
-	const char * ctiming = av_value(avl, "timing");
+	LENCHECK(conf, "metric-conf");
+	LENCHECK(lidnames, "node-name-map");
+	LENCHECK(cid, LDMSD_COMPID);
+	LENCHECK(cnum, "port-number");
+	LENCHECK(sbase, "schema");
+	LENCHECK(ctiming, "timing");
 
 	/* optional for timing */
-	const char * itiming = av_value(avl, "instance");
-	const char * ptiming = av_value(avl, "producer");
+	LENCHECK(itiming, "instance");
+	LENCHECK(ptiming, "producer");
+
+#ifndef MAIN
 
 	d->perm = 0777;
 	(void)base_auth_parse(avl, &(d->uid), &(d->gid), &(d->perm), d->log);
-	if (!srclist) {
+	if (!srclist || strlen(srclist) == 0) {
 		errno = EINVAL;
 		d->log(LDMSD_LERROR, SAMP " needs source_list=<file> of lid/port to read.\n");
 		goto err;
@@ -319,6 +396,7 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 	} else {
 		strcpy(d->ca_name, cname);
 	}
+#endif
 	if (lidnames) {
 		d->lidnames = strdup(lidnames);
 		if (!d->lidnames) {
@@ -350,7 +428,7 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 	if (conf) {
 		rc = ibnet_data_cr_opt_parse(d, conf);
 		if (d->debug)
-			dump_cr(d->cr_opt);
+			dump_cr(d->cr_opt, d);
 		if (rc)
 			goto err;
 	}
@@ -375,8 +453,8 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 		char *endp;
 		endp = NULL;
 		errno = 0;
-		unsigned int j = strtoul(cnum, &endp, 3);
-		if (endp == cnum || errno || j > 2 ) {
+		unsigned int j = strtoul(ctiming, &endp, 3);
+		if (endp == ctiming || errno || j > 2 ) {
 			d->log(LDMSD_LERROR, SAMP "Got bad timing '%s'\n",
 				ctiming);
 			rc = EINVAL;
@@ -413,6 +491,7 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 				d->schema_name_base, schema_suffix);
 		snprintf(timing_schema_name, MAX_STR_NAME, "%s_timing",
 			port_schema_name);
+#ifndef MAIN
 		if (cid) {
 			char *endp;
 			endp = NULL;
@@ -426,7 +505,14 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 			}
 			d->comp_id = j;
 		}
+#endif
 	}
+
+#ifdef MAIN
+	psname[0] = strdup(port_schema_name);
+	if (d->port_timing)
+		psname[1] = strdup(timing_schema_name);
+#else
 	// create schemas
 	d->log(LDMSD_LDEBUG, SAMP " port schema %s\n", port_schema_name);
 	if (d->port_timing)
@@ -461,14 +547,20 @@ struct ibnet_data *ibnet_data_new(ldmsd_msg_log_f log, struct attr_value_list *a
 	}
 
 	rc = parse_lid_file(d, srclist);
-	if (rc)
+	if (rc) {
+		d->log(LDMSD_LERROR, SAMP " failed parse_lid_file %s\n", srclist);
 		goto err;
+	}
 
 	// create instances
-	rc = ibnet_data_sets_init(d, port_schema_name, timing_producer, timing_instance_name);
-	if (rc)
+	rc = ibnet_data_sets_init(d, port_schema_name, timing_producer,
+		timing_instance_name);
+	if (rc) {
+		d->log(LDMSD_LERROR, SAMP " failed ibnet_data_sets_init %s, %s, %s\n",
+			port_schema_name, timing_producer, timing_instance_name);
 		goto err;
-
+	}
+#endif
 	return d;
 err:
 	errno = rc;
@@ -481,6 +573,7 @@ void ibnet_data_delete(struct ibnet_data *d)
 {
 	if (!d)
 		return;
+#ifndef MAIN
 	// timing_set
 	if (d->timing_set) {
 		ldms_set_unpublish(d->timing_set);
@@ -503,12 +596,14 @@ void ibnet_data_delete(struct ibnet_data *d)
 		d->timing_schema = NULL;
 	}
 	free(d->srclist);
-	free(d->lidnames);
 	if (d->nnmap)
 		close_node_name_map(d->nnmap);
+#endif
+	free(d->lidnames);
 	free(d);
 }
 
+#ifndef MAIN
 /** update sets in inst. */
 void ibnet_data_sample(struct ibnet_data *d)
 {
@@ -520,6 +615,7 @@ void ibnet_data_sample(struct ibnet_data *d)
 
 	if (d->port_timing) {
 		gettimeofday(&tv[0], 0);
+		ldms_transaction_begin(d->timing_set);
 	}
 	struct ib_port *port;
 	LIST_FOREACH(port, &(d->ports), entry) {
@@ -545,9 +641,11 @@ void ibnet_data_sample(struct ibnet_data *d)
 
 		v.v_d = dtprocess;
 		ldms_metric_set(d->timing_set, d->index_ib_data_process_time, &v);
+		ldms_transaction_end(d->timing_set);
 	}
 
 }
+#endif
 
 /** Read a file of MAD field groups (1 per line). A group may be disabled by deleting it or starting its
  * name with #, e.g. #port-op-rcv-pkts-group instead of port-op-rcv-pkts-group.
@@ -604,9 +702,17 @@ static int ibnet_data_cr_opt_parse(struct ibnet_data *d, const char *conf)
 				"nothing. use #name only.\n", conf);
 		}
 		size_t k;
-		for (k = 0; k < cr_count; k++)
-			d->cr_opt[k].enabled =
-				(av_idx_of(kwl, d->cr_opt[k].subset) != -1);
+		for (k = 0; k < cr_count; k++) {
+			if (d->cr_opt[k].enabled < 2) {
+				d->cr_opt[k].enabled =
+					(av_idx_of(kwl, d->cr_opt[k].subset) != -1);
+				if (d->debug)
+					d->log(LDMSD_LDEBUG, SAMP " %s %sin %s\n",
+						d->cr_opt[k].subset,
+						(d->cr_opt[k].enabled ? "" : "not "),
+						conf);
+			}
+		}
 		av_free(kwl);
 		av_free(avl);
 	}
@@ -620,6 +726,7 @@ err:
 	return rc;
 }
 
+#ifndef MAIN
 /** Define schemas as needed.
  * Return < 0 if problem, in which case caller should abandon instance.
  * Return 0 if ok.
@@ -645,31 +752,41 @@ const char * timing_schema)
 
 	if (!d || !port_schema)
 		return EINVAL;
-	d->log(LDMSD_LDEBUG, SAMP " schemas_init(i, %s, %s)\n",
-		port_schema, timing_schema );
+	if (d->log)
+		d->log(LDMSD_LDEBUG, SAMP " schemas_init(i, %s, %s)\n",
+			port_schema, timing_schema );
 
 	/* set up the port schema. */
 	d->port_schema = ldms_schema_new(port_schema);
 	if (d->port_schema == NULL)
 		goto err1;
 
+	if (d->debug)
+		dump_cr(d->cr_opt, d);
+#define MADD(x) if (d->debug) \
+			d->log(LDMSD_LDEBUG, SAMP ": add metric %s\n",x)
+
 	// add cluster meta?
+	MADD("remote");
 	rc = ldms_schema_meta_array_add(d->port_schema, "remote",
 		LDMS_V_CHAR_ARRAY, REMOTESZ);
 	if (rc < 0)
 		goto err2;
 	d->index_remote = rc;
 
+	MADD("lid");
 	rc = ldms_schema_meta_add(d->port_schema, "lid", LDMS_V_S32);
 	if (rc < 0)
 		goto err2;
 	d->index_lid = rc;
 
+	MADD("port");
 	rc = ldms_schema_meta_add(d->port_schema, "port", LDMS_V_S32);
 	if (rc < 0)
 		goto err2;
 	d->index_port = rc;
 	
+	MADD("node_name");
 	if (d->lidnames) {
 		rc = ldms_schema_meta_array_add(d->port_schema, "node_name",
 			LDMS_V_CHAR_ARRAY, NNSIZE);
@@ -678,16 +795,26 @@ const char * timing_schema)
 		d->index_node_name = rc;
 	}
 	if (d->port_timing == 2) {
+		MADD("port_query_time");
 		rc = ldms_schema_metric_add(d->port_schema, "port_query_time", LDMS_V_D64);
 		if (rc < 0)
 			goto err2;
 		d->index_port_query_time = rc;
 	}
+	int prev = 0;
 	for (i = 0; i < cr_count; i++) {
-		if (d->cr_opt[i].enabled) {
+		if (!d->cr_opt[i].enabled) {
+			prev = 0;
+			continue;
+		}
+		if (d->cr_opt[i].enabled == 1|| prev) {
+			if (d->debug) 
+				d->log(LDMSD_LDEBUG, SAMP ": add subset %s\n", d->cr_opt[i].subset);
+			prev = 1;
 			enum MAD_FIELDS j = d->cr_opt[i].lo;
 			for ( ; j <= d->cr_opt[i].hi; j++) {
 				const char *m = mad_field_name(j);
+				MADD(m);
 				rc = ldms_schema_metric_add(d->port_schema, m,
 					LDMS_V_U64);
 				if (rc < 0)
@@ -705,17 +832,19 @@ const char * timing_schema)
 			goto err1;
 		}
 
-		rc = ldms_schema_meta_add(d->port_schema, LDMSD_COMPID, LDMS_V_U64);
+		rc = ldms_schema_meta_add(d->timing_schema, LDMSD_COMPID, LDMS_V_U64);
 		if (rc < 0)
 			goto err2;
 		d->index_compid = rc;
 
-		rc = ldms_schema_metric_add(d->port_schema, "ib_query_time", LDMS_V_D64);
+		MADD("ib_query_time");
+		rc = ldms_schema_metric_add(d->timing_schema, "ib_query_time", LDMS_V_D64);
 		if (rc < 0)
 			goto err2;
 		d->index_ib_query_time = rc;
 
-		rc = ldms_schema_metric_add(d->port_schema, "ib_data_process_time", LDMS_V_D64);
+		MADD("ib_data_process_time");
+		rc = ldms_schema_metric_add(d->timing_schema, "ib_data_process_time", LDMS_V_D64);
 		if (rc < 0)
 			goto err2;
 		d->index_ib_data_process_time = rc;
@@ -751,15 +880,19 @@ int ibnet_data_sets_init(struct ibnet_data *d, const char *port_schema_name, con
 	char port_instance_name[MAX_STR_NAME];
 	struct ib_port *port;
 	LIST_FOREACH(port, &(d->ports), entry) {
-		snprintf(port_instance_name, MAX_STR_NAME, "%s/%s",
-				port->lidname, port_schema_name);
+		snprintf(port_instance_name, MAX_STR_NAME, "%s/%d/%s",
+				port->lidname, port->num, port_schema_name);
 		port->set = ldms_set_new(port_instance_name, d->port_schema);
 		if (!port->set) {
 			rc = errno;
-			d->log(LDMSD_LERROR, SAMP ": ldms_set_new failed, "
-				"errno: %d, %s\n", rc, ovis_errno_abbvr(errno));
+			d->log(LDMSD_LERROR, SAMP ": ldms_set_new %s failed, "
+				"errno: %d, %s\n", port_instance_name, rc,
+				 ovis_errno_abbvr(errno));
 			return rc;
 		}
+		if (d->debug)
+			d->log(LDMSD_LDEBUG, SAMP ": ldms_set_new %s\n",
+				port_instance_name);
 		ldms_set_producer_name_set(port->set, port->lidname);
 		ldms_set_config_auth(port->set, d->uid, d->gid, d->perm);
 		ldms_set_publish(port->set);
@@ -782,14 +915,17 @@ int ibnet_data_sets_init(struct ibnet_data *d, const char *port_schema_name, con
 static int parse_lid_file(struct ibnet_data *d, const char *lidfile)
 {
 
-	if (!d || !lidfile)
+	if (!d || !lidfile) {
+		d->log(LDMSD_LERROR, SAMP ": parse_lid_file bad args\n");
 		return EINVAL;
+	}
 	FILE *f = fopen(lidfile, "r");
 	if (!f) {
+		d->log(LDMSD_LERROR, SAMP ": cannot read lid file %s\n", lidfile);
 		return errno;
 	}
 
-	int rc;
+	int rc = 0;
 	size_t bsize = 2048;
 	char *buf = malloc(bsize);
 	if (!buf) {
@@ -815,11 +951,11 @@ static int parse_lid_file(struct ibnet_data *d, const char *lidfile)
 		}
 		/* get lid, guid, nports */
 		uint64_t guid = 0;
-		sr = sscanf(buf, " %d , %li , %d , %n",
+		sr = sscanf(buf, " %d %" SCNx64 " %d %n",
 			&lid, &guid, &nports, &offset);
 		if (d->debug)
-			d->log(LDMSD_LDEBUG, SAMP ": %d %d :%d; %"PRIx64 "; %d of %s",
-				sr, offset-1, lid, guid, nports, buf);
+			d->log(LDMSD_LDEBUG, SAMP ": %d %d :line %d: %d %"PRIx64 " %d of %s",
+				sr, offset-1, ln, lid, guid, nports, buf);
 		if (sr < 3) {
 			d->log(LDMSD_LERROR, SAMP ": bad line %d: %s. Expected lid,guid(0xhex),nports,\n",
 				ln, buf);
@@ -874,9 +1010,6 @@ static int parse_lid_file(struct ibnet_data *d, const char *lidfile)
 			}
 			portnum[pcount] = port;
 			pcount++;
-			if (d->debug)
-				d->log(LDMSD_LDEBUG, "Got port number %d\n",
-					port);
 			token = strtok_r(hptr, ",\t\n", &sptr);
 		}
 		if (pcount < nports) {
@@ -1022,9 +1155,6 @@ static void port_query(struct ibnet_data *d, struct ib_port *port)
 		if (cr->mask_check && !(cr->mask_check & port->cap_mask)) {
 			continue;
 		}
-		if (d->debug)
-			d->log(LDMSD_LDEBUG, SAMP ": read subset %zu %s %d %s\n",
-				g, cr->subset, port->lid, port->lidname);
 		switch(cr->enabled) {
 		case 0:
 			res = NULL;
@@ -1036,12 +1166,15 @@ static void port_query(struct ibnet_data *d, struct ib_port *port)
 			if (!res) {
 				port->qerr[g] = errno;
 				if (!port->err_logged[g]) {
-					d->log(LDMSD_LINFO, SAMP ": Error querying %s.%d, "
-						"errno: %d\n", port->remote,
+					d->log(LDMSD_LINFO, SAMP ": Error querying subset %s on %s %d, "
+						"errno: %d\n", cr->subset, port->remote,
 						port->num, port->qerr[g]);
 					port->err_logged[g] = 1;
 				}
 			} else {
+				if (d->debug && false)
+					d->log(LDMSD_LDEBUG, SAMP ": read subset %zu %s %d %s\n",
+						g, cr->subset, port->lid, port->lidname);
 				port->qerr[g] = 0;
 				if (port->err_logged[g]) {
 					port->err_logged[g] = 0;
@@ -1068,6 +1201,7 @@ static void port_decode(struct ibnet_data *d, struct ib_port *port)
 	if (!d || !port)
 		return;
 	
+	ldms_transaction_begin(port->set);
 	if (! port->meta_init) {
 		port->meta_init = 1;
 		ldms_metric_array_set_str(port->set, d->index_remote, port->remote);
@@ -1127,19 +1261,81 @@ static void port_decode(struct ibnet_data *d, struct ib_port *port)
 			break;
 		}
 	}
+	ldms_transaction_end(port->set);
 }
+#endif
 
 static char suffix[10];
 static const char *compute_schema_suffix(struct ibnet_data *d)
 {
 	int g;
 	int hash = 0;
+	int k = 0;
 	for (g = 0; g < cr_count; g++) {
 		if (d->cr_opt[g].enabled == 1) {
-			hash |= 1 << g;
-			d->log(LDMSD_LDEBUG, SAMP " hash %d\n", (int)(d->cr_opt[g].enabled == 1 ? 1 : 0));
+			hash |= 1 << k;
+			if (d->debug)
+				d->log(LDMSD_LDEBUG, SAMP " hash %d %s\n",
+					k, d->cr_opt[g].subset);
 		}
+		if (d->cr_opt[g].id != GSI_CONT)
+			k++;
 	}
 	snprintf(suffix, sizeof(suffix), "_%x%s%s", hash, (d->port_timing == 2 ? "_t" : ""), (d->lidnames ? "n" : ""));
 	return suffix;
 }
+
+#ifdef MAIN
+static void ibnet_get_schema_name(int argc, char **argv)
+{
+	int rc = 0;
+	dstring_t ds;
+	dstr_init2(&ds, 1024);
+	int i;
+	for (i = 1; i < argc; i++) {
+		dstrcat(&ds, argv[i], DSTRING_ALL);
+		dstrcat(&ds, " ", 1);
+	}
+	char *buf = dstr_extract(&ds);
+	int size = 1;
+	char *t = buf;
+	while (t[0] != '\0') {
+		if (isspace(t[0])) size++;
+		t++;
+	}
+	struct attr_value_list *avl = av_new(size);
+	struct attr_value_list *kwl = av_new(size);
+	rc = tokenize(buf, kwl, avl);
+	if (rc) {
+		fprintf(stderr, SAMP " failed to parse arguments. %s\n", buf);
+		rc = EINVAL;
+		goto out;
+	}
+	struct ibnet_data *d = ibnet_data_new(ldmsd_log, avl, kwl);
+	if (!d) {
+		fprintf(stderr, "could not create schema from options\n");
+		rc = EINVAL;
+		goto out;
+	}
+	printf("%s\n", psname[0]);
+	free(psname[0]);
+	if (d->port_timing) {
+		free(psname[1]);
+	}
+	ibnet_data_delete(d);
+out:
+	av_free(kwl);
+	av_free(avl);
+	free(buf);
+	exit(rc);
+}
+
+#include "ibnet_data.h"
+int main(int argc, char **argv) 
+{
+	ibnet_get_schema_name(argc, argv);
+	return 0;
+}
+
+void ldmsd_log(enum ldmsd_loglevel level, const char *fmt, ...) { }
+#endif

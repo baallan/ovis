@@ -84,32 +84,34 @@ lid, hexguid, nports, plist
  * where hexguid is 0x....,
  * nports is int, 
  * plist is ints nports long or * if range is 1-nports,
- * if not using name map, names will be GUID_hex.
+ * if not using a name map, names will be GUID_hex.
 
 .fi
-until such time as we have nodenamemap. The portrange will be an integer expression
+The portrange will be an integer expression
 in the style 1,5,7-9,13, without repeats, whitespace, reversed ranges, or overlapping ranges.
-When there is nodenamemap support, lid may be a short string equivalent to a GUID as mapped.
-Until then, LID is an integer in the range 0-65535.
+LID is an integer in the range 0-65535.
+The same LID may be on multiple lines so long as the ports listed for it are not repeated.
+
+The lid file can be generated with ldms-gen-lidfile.sh.
 
 .SH METRIC GROUPS
 The metric groups file contains a list of items, one per line, naming groups of metrics to collect. The groups are named corresponding to groups in the infiniband-diags perfquery utility options. The correspondence is not exact.
+To disable a listed metric group, delete its name from the file or comment it out by prepending a # to the group, e.g. '#xmtsl'. '#' followed by whitespace is not allowed. Carriage returns are optional.
 
 .SH BUGS
 The perfquery extended_speeds option is not supported.
-The nodenamemap option is not yet supported.
-The portfile option is not yet supported.
 
 .SH EXAMPLES
 .PP
 Within ldmsd_controller or a configuration file:
 .nf
 load name=ibnet
-config name=ibnet producer=compute1 instance=compute1/ibnet component_id=1
+config name=ibnet producer=compute1 instance=compute1/ibnet component_id=1 port-name=mlx5_0 source-list=/path/lidfile
 start name=ibnet interval=1000000
 .fi
 
 .SH NOTES
+The exact schema name that will be generated can be determined using the ldms_ibnet_schema_name utility.
 
 .SH SEE ALSO
-ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ib_delegator(8)
+ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ibnet_schema_name(1)
