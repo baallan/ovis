@@ -96,7 +96,6 @@ static int sample_ibnet(struct ldmsd_sampler *self)
 	pthread_mutex_lock(&only_lock);
 	struct ibnet_data *inst = only;
 
-	msg_log(LDMSD_LDEBUG, SAMP" sample() called\n");
 	if (!inst) {
 		msg_log(LDMSD_LERROR, SAMP " not properly configured.\n");
 	} else {
