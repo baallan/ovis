@@ -1,5 +1,5 @@
 export plugname=lustre2_client
-x=`ls /proc/fs/lustre/llite |sed -e 's/-[^ ]*//g'`
+x=`ls /proc/fs/lustre/llite /sys/kernel/debug/lustre/llite |sed -e 's/-[^ ]*//g'`
 if test -z "$x"; then
 	echo FAIL: no lustre llites to test
 	exit 1
