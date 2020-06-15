@@ -23,19 +23,19 @@ libibnet_la_SOURCES = ibnet_plugin.c ibnet_data.c ibnet_data.h
 libibnet_la_LIBADD = $(COMMON_LIBADD)
 libibnet_la_LDFLAGS = $(AM_LDFLAGS) -libmad -libumad -losmcomp -pthread
 libibnet_la_CFLAGS = $(AM_CFLAGS) -I/usr/include/infiniband
-bin_SCRIPTS += scripts/ldms-gen-lidfile.sh
+bin_SCRIPTS += scripts/ldms-ibnet-sampler-gen
 pkglib_LTLIBRARIES += libibnet.la
 
 bin_PROGRAMS += ldms_ibnet_schema_name
 dist_man7_MANS += Plugin_ibnet.man
-dist_man1_MANS += ldms_ibnet_schema_name.man
+dist_man1_MANS += ldms_ibnet_schema_name.man ldms-ibnet-sampler-gen.man
+
 ldms_ibnet_schema_name_SOURCES = ibnet_data.c
 ldms_ibnet_schema_name_LDADD = $(top_builddir)/ldms/src/ldmsd/libldmsd_plugattr.la \
                 $(top_builddir)/ldms/src/core/libldms.la \
                 @LDFLAGS_GETTIME@ \
                 $(top_builddir)/lib/src/ovis_util/libovis_util.la \
                 $(top_builddir)/lib/src/coll/libcoll.la
-#ldms_ibnet_schema_name_LDFLAGS = $(AM_LDFLAGS) -lldms -lovis_util -libmad -libumad -losmcomp -pthread
 ldms_ibnet_schema_name_LDFLAGS = $(AM_LDFLAGS) -lldms -lovis_util  -pthread
 ldms_ibnet_schema_name_CFLAGS = $(AM_CFLAGS) -DMAIN -I/usr/include/infiniband
 

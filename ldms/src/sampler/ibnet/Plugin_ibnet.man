@@ -114,4 +114,4 @@ start name=ibnet interval=1000000
 The exact schema name that will be generated can be determined using the ldms_ibnet_schema_name utility.
 
 .SH SEE ALSO
-ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ibnet_schema_name(1)
+ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ibnet_schema_name(1), ldms-ibnet-sampler-gen(1)
