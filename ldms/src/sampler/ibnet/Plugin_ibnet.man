@@ -69,8 +69,8 @@ The port number to use, which must be active.
 .TP
 timing=<T>
 .br
-Disable timing (T=0), enable aggregate timing (T=1), or emable individual port timing(T=2).
-The metric set will contain sampling process timing metrics if T > 0. Timing should not be used in production deployments.
+Disable timing (T=0), enable aggregate timing (T=1), or enable individual port timing(T=2) or enable port offset timing(T=3).
+The metric set will contain sampling process timing metrics if T > 0.
 .TP
 node-name-map=<nnmap>
 .br
@@ -98,6 +98,24 @@ The lid file can be generated with ldms-gen-lidfile.sh.
 The metric groups file contains a list of items, one per line, naming groups of metrics to collect. The groups are named corresponding to groups in the infiniband-diags perfquery utility options. The correspondence is not exact.
 To disable a listed metric group, delete its name from the file or comment it out by prepending a # to the group, e.g. '#xmtsl'. '#' followed by whitespace is not allowed. Carriage returns are optional.
 
+.SH INTERNAL METRICS
+.TP
+port_query_time
+.br
+Time in seconds spend in the single port MAD call.
+.TP
+port_query_offset
+.br
+Time in microseconds from start of all MAD calls in the current update to the end of the mad call for the specific port.
+.TP
+ib_query_time
+.br
+Time in seconds making all MAD calls in the update.
+.TP
+ib_data_process_time
+.br
+Time in seconds decoding all MAD data in the update
+
 .SH BUGS
 The perfquery extended_speeds option is not supported.
 
@@ -114,4 +132,4 @@ start name=ibnet interval=1000000
 The exact schema name that will be generated can be determined using the ldms_ibnet_schema_name utility.
 
 .SH SEE ALSO
-ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ibnet_schema_name(1), ldms-ibnet-sampler-gen(1)
+ldmsd(8), ldms_quickstart(7), ldmsd_controller(8), ldms_ibnet_schema_name(1), ldms-ibnet-sampler-gen(1).

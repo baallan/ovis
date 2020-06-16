@@ -149,6 +149,7 @@ struct ib_port {
 	 * Metric handle for the meta lidport;
 	 */
 	double qtime; /* mad call time in seconds */
+	int32_t stime; /* mad call end - group query start, microseconds .*/
 	__be16 cap_mask;
 	int qerr[CR_COUNT]; /* err found during port_query */
 	int err_logged[CR_COUNT];
@@ -189,6 +190,7 @@ struct ibnet_data {
 	int index_port;
 	int index_node_name;
 	int index_port_query_time;
+	int index_port_query_offset;
 	/* timing schema indices */
 	int index_compid;
 	int index_ib_query_time;
@@ -257,7 +259,7 @@ static int parse_lid_file(struct ibnet_data *d, const char *lidfile);
 static int add_lid(struct ibnet_data *d, uint16_t lid_no, uint64_t guid,
 	char *devname, int nports, int *ports);
 static void ibnet_data_port_destroy(struct ib_port *port);
-static void port_query(struct ibnet_data *d, struct ib_port *port);
+static void port_query(struct ibnet_data *d, struct ib_port *port, struct timeval *t);
 static void port_decode(struct ibnet_data *d, struct ib_port *port);
 #else
 char *psname[2] = { NULL };
@@ -289,7 +291,7 @@ char *ibnet_data_usage() {
 	"    num	  port number on local hca. (default 1)\n"
 	"    nnmap	full path of file with guid:description pairs as used (optional)\n"
 	"		with --node-name-map in ibnetdiscover.\n"
-	"    timeopt      0:no timing data, 1:bulk only, 2:port and bulk.\n"
+	"    timeopt      0:no timing data, 1:bulk only, 2:port and bulk, 3: offset timing in ports also.\n"
 	"    producer     A unique name for the host providing the timing data (default $HOSTNAME)\n"
 	"    instance     A unique name for the timing metric set (default $HOSTNAME/" SAMP ")\n"
 	"    component_id A unique number for the component being monitoring, Defaults to zero.\n"
@@ -619,7 +621,7 @@ void ibnet_data_sample(struct ibnet_data *d)
 	}
 	struct ib_port *port;
 	LIST_FOREACH(port, &(d->ports), entry) {
-		port_query(d, port);
+		port_query(d, port, &tv[0]);
 	}
 	if (d->port_timing) {
 		gettimeofday(&tv[1], 0);
@@ -763,6 +765,7 @@ const char * timing_schema)
 
 	if (d->debug)
 		dump_cr(d->cr_opt, d);
+/* metric add log */
 #define MADD(x) if (d->debug) \
 			d->log(LDMSD_LDEBUG, SAMP ": add metric %s\n",x)
 
@@ -794,12 +797,19 @@ const char * timing_schema)
 			goto err2;
 		d->index_node_name = rc;
 	}
-	if (d->port_timing == 2) {
+	if (d->port_timing >= 2) {
 		MADD("port_query_time");
 		rc = ldms_schema_metric_add(d->port_schema, "port_query_time", LDMS_V_D64);
 		if (rc < 0)
 			goto err2;
 		d->index_port_query_time = rc;
+	}
+	if (d->port_timing == 3) {
+		MADD("port_query_offset");
+		rc = ldms_schema_metric_add(d->port_schema, "port_query_offset", LDMS_V_D64);
+		if (rc < 0)
+			goto err2;
+		d->index_port_query_offset = rc;
 	}
 	int prev = 0;
 	for (i = 0; i < cr_count; i++) {
@@ -1113,6 +1123,7 @@ static void ibnet_data_port_destroy(struct ib_port *port)
 	port->lidname[0] = '\0';
 	port->remote_guid = UINT64_MAX;
 	port->qtime = -1;
+	port->stime = -1;
 	int g;
 	for (g = 0 ; g < cr_count; g++) {
 		free(port->rcv_buf[g]);
@@ -1121,9 +1132,9 @@ static void ibnet_data_port_destroy(struct ib_port *port)
 	free(port);
 }
 
-static void port_query(struct ibnet_data *d, struct ib_port *port)
+static void port_query(struct ibnet_data *d, struct ib_port *port, struct timeval *group_start)
 {
-	if (!d || !port)
+	if (!d || !port || !group_start)
 		return;
 	if (!port)
 		return;
@@ -1131,6 +1142,7 @@ static void port_query(struct ibnet_data *d, struct ib_port *port)
 	struct timeval qtv_diff, qtv_now, qtv_prev;
 	if (d->port_timing == 2) {
 		port->qtime = 0;
+		port->stime = 0;
 		gettimeofday(&qtv_prev, 0);
 	}
 	if (!port->cap_mask) {
@@ -1188,10 +1200,14 @@ static void port_query(struct ibnet_data *d, struct ib_port *port)
 		}
 	}
 
-	if (d->port_timing == 2) {
+	if (d->port_timing >= 2) {
 		gettimeofday(&qtv_now, 0);
 		timersub(&qtv_now, &qtv_prev, &qtv_diff);
 		port->qtime = qtv_diff.tv_sec + qtv_diff.tv_usec / 1e6;
+		if (d->port_timing == 3) {
+			timersub(&qtv_now, group_start, &qtv_diff);
+			port->stime = qtv_diff.tv_sec * 1000000 + qtv_diff.tv_usec;
+		}
 	}
 
 }
@@ -1213,8 +1229,11 @@ static void port_decode(struct ibnet_data *d, struct ib_port *port)
 		}
 	}
 
-	if (d->port_timing == 2) {
+	if (d->port_timing >= 2) {
 		ldms_metric_set_double(port->set, d->index_port_query_time, port->qtime);
+		if (d->port_timing == 3) {
+			ldms_metric_set_s32(port->set, d->index_port_query_offset, port->stime);
+		}
 	}
 	size_t g;
 	uint8_t *res = NULL;
@@ -1265,7 +1284,7 @@ static void port_decode(struct ibnet_data *d, struct ib_port *port)
 }
 #endif
 
-static char suffix[10];
+static char suffix[12];
 static const char *compute_schema_suffix(struct ibnet_data *d)
 {
 	int g;
@@ -1281,7 +1300,22 @@ static const char *compute_schema_suffix(struct ibnet_data *d)
 		if (d->cr_opt[g].id != GSI_CONT)
 			k++;
 	}
-	snprintf(suffix, sizeof(suffix), "_%x%s%s", hash, (d->port_timing == 2 ? "_t" : ""), (d->lidnames ? "n" : ""));
+
+        const char *tsuffix;
+        switch (d->port_timing) {
+	case 2:
+		tsuffix = "_t";
+		break;
+	case 3:
+		tsuffix = "_T";
+		break;
+	default:
+		tsuffix = "";
+		break;
+	}
+   
+	snprintf(suffix, sizeof(suffix), "_%x%s%s", hash, tsuffix,
+		(d->lidnames ? "n" : ""));
 	return suffix;
 }
 
