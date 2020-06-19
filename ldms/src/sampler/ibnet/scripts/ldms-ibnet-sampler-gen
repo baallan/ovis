@@ -1189,6 +1189,12 @@ def rr3_assign_sampler(args, ca, sw, lk, tr, adminlist):
 
 ######################################
 # formatting for humans
+def format_lidnames(ca, sw, guid_name):
+    for lid, c in ca.items():
+         print("{},{}".format(lid, c.host))
+    for lid, s in sw.items():
+         print("{},{}".format(lid, s.host))
+
 def format_links(ca, sw, lk, tr):
     names = lk.keys() 
     print("Links ========");
@@ -1834,6 +1840,7 @@ def graph_tier(ca, sw, lk, fbase, tn, hnprefs, hnexclude, alg, opts, merge_nodes
 
 def get_arg_parser():
     p = argparse.ArgumentParser(description = 'generate graphs and sampler assignments for ib fabrics')
+    p.add_argument("--lidnames", action="store_true", help="dump lid-names file", default=True)
     p.add_argument("--out", dest='outprefix', help="prefix of output files", required=True)
     p.add_argument("--net", dest='ibndpfile', help="file name of output collected from 'ibnetdiscover -p'", required=True)
     p.add_argument("--samplers", dest='hostfile', help="file listing samplers as named in the host name map, one per line", required=True)
@@ -1858,6 +1865,9 @@ def main():
     args = aparse.parse_args()
 
     (ca, sw, lk, guid_name, name_guid, lidmax) = ibnd_p_parse(args.dump_parse, args.ibndpfile)
+    if args.lidnames:
+        format_lidnames(ca, sw, guid_name)
+        return
     adminlist = sampler_parse(args.hostfile)
     tr = Tier()
     # print("{}".format( args ))

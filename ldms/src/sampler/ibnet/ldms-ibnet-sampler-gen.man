@@ -20,6 +20,7 @@ dump of an approximately three-level FAT tree.
   --out OUTPREFIX       prefix of output files
   --net IBNDPFILE       file name of output collected from 'ibnetdiscover -p'
   --samplers HOSTFILE   file listing samplers as named in the node name map, one per line.
+  --lidnames            dump lid,name map to stdout and exit.
   --annotate            annotate out sampler assignment files with node-name-map strings.
   --tier0               generate tier0-1 graphs
   --tier1               generate tier1-2 graphs
@@ -50,6 +51,9 @@ EOF
 
 ibnetdiscover -p > cluster-p-netdiscover
 
+ldms-ibnet-sampler-gen --lidnames --net cluster-p-netdiscover --samplers x --out x |
+    sort -k2 -t, > lid.host.txt
+
 ldms-ibnet-sampler-gen \
 --net cluster-p-netdiscover \
 --samplers clustre-samplers \
@@ -65,4 +69,4 @@ This program does not directly invoke infiniband. It does invoke (and require) g
 Applying the --node-name-map option to ibnetdiscover when generating the net file makes the results more readable.
 
 .SH SEE ALSO
-Plugin_ibnet(7), ciro, dot
+Plugin_ibnet(7), circo, dot
