@@ -141,8 +141,8 @@ pthread_mutex_t context_tree_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct ibv_pd *__rdma_get_pd(struct ibv_context *context)
 {
 	struct ibv_pd *pd = NULL;
-	struct context_tree_entry *ce;
-	struct rbn *rbn;
+	struct context_tree_entry *ce = NULL;
+	struct rbn *rbn = NULL;
 
 	pthread_mutex_lock(&context_tree_lock);
 	rbn = rbt_find(&context_tree, context);
@@ -196,6 +196,7 @@ static int __enable_cq_events(struct z_rdma_ep *rep)
 {
 	/* handle CQ events */
 	struct epoll_event cq_event;
+	memset(&cq_event, 0, sizeof(cq_event));
 	cq_event.data.ptr = rep;
 	cq_event.events = EPOLLIN | EPOLLOUT;
 
@@ -224,6 +225,7 @@ static void __rdma_teardown_conn(struct z_rdma_ep *ep)
 	 * support Linux version < 2.6.9
 	 */
 	struct epoll_event ignore;
+	memset(&ignore, 0 , sizeof(ignore));
 	if (rep->cm_channel) {
 		if (epoll_ctl(cm_fd, EPOLL_CTL_DEL, rep->cm_channel->fd, &ignore))
 			LOG_(rep, "RDMA: epoll_ctl delete cm_channel "
@@ -295,6 +297,7 @@ static int __rdma_setup_conn(struct z_rdma_ep *rep)
 {
 	struct ibv_qp_init_attr qp_attr;
 	int ret = -ENOMEM;
+	memset(&qp_attr, 0 , sizeof(qp_attr));
 
 	/* Allocate PD */
 	rep->pd = __rdma_get_pd(rep->cm_id->verbs);
@@ -370,7 +373,7 @@ static struct z_rdma_buffer *
 __rdma_buffer_alloc(struct z_rdma_ep *rep, size_t len,
 		  enum ibv_access_flags f)
 {
-	struct z_rdma_buffer *rbuf;
+	struct z_rdma_buffer *rbuf = NULL;
 
 	rbuf = calloc(1, sizeof *rbuf + len);
 	if (!rbuf)
@@ -442,10 +445,12 @@ static int queue_io(struct z_rdma_ep *rep, struct z_rdma_context *ctxt)
 /* Must be called with the credit lock held */
 static void flush_io_q(struct z_rdma_ep *rep)
 {
-	struct z_rdma_context *ctxt;
+	struct z_rdma_context *ctxt = 0;
 	struct zap_event ev = {
 		.status = ZAP_ERR_FLUSH,
 	};
+	memset(&ev, 0, sizeof(ev));
+	ev.status = ZAP_ERR_FLUSH;
 
 	while (!TAILQ_EMPTY(&rep->io_q)) {
 		ctxt = TAILQ_FIRST(&rep->io_q);
@@ -492,7 +497,7 @@ post_send(struct z_rdma_ep *rep,
 	  int is_rdma)
 {
 	int rc;
-	struct z_rdma_message_hdr *msg;
+	struct z_rdma_message_hdr *msg = 0;
 	/*
 	 * RDMA_READ/WRITE do not have a message header.
 	 */
@@ -583,8 +588,8 @@ static void put_sq(struct z_rdma_ep *rep)
  */
 static void submit_pending(struct z_rdma_ep *rep)
 {
-	struct ibv_send_wr *badwr;
-	struct z_rdma_context *ctxt;
+	struct ibv_send_wr *badwr = NULL;
+	struct z_rdma_context *ctxt = NULL;
 	int is_rdma;
 
 	pthread_mutex_lock(&rep->credit_lock);
@@ -609,7 +614,7 @@ static void submit_pending(struct z_rdma_ep *rep)
 static zap_err_t __rdma_post_send(struct z_rdma_ep *rep, struct z_rdma_buffer *rbuf)
 {
 	int rc;
-	struct ibv_send_wr *bad_wr;
+	struct ibv_send_wr *bad_wr = NULL;
 
 	pthread_mutex_lock(&rep->ep.lock);
 	struct z_rdma_context *ctxt =
@@ -683,6 +688,7 @@ static zap_err_t z_rdma_connect(zap_ep_t ep,
 {
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
 	struct epoll_event cm_event;
+	memset(&cm_event, 0, sizeof(cm_event));
 	zap_err_t zerr;
 	int rc;
 
@@ -748,8 +754,10 @@ static int __rdma_post_recv(struct z_rdma_ep *rep, struct z_rdma_buffer *rb)
 {
 	struct ibv_recv_wr wr;
 	struct ibv_sge sge;
-	struct ibv_recv_wr *bad_wr;
-	struct z_rdma_context *ctxt;
+	struct ibv_recv_wr *bad_wr = NULL;
+	struct z_rdma_context *ctxt = NULL;
+	memset(&wr, 0 ,sizeof(wr));
+	memset(&sge, 0 ,sizeof(sge));
 	int rc;
 
 	pthread_mutex_lock(&rep->ep.lock);
@@ -837,6 +845,7 @@ static void process_read_wc(struct z_rdma_ep *rep, struct ibv_wc *wc,
 			    void *usr_context)
 {
 	struct zap_event zev;
+	memset(&zev, 0 ,sizeof(zev));
 	zev.type = ZAP_EVENT_READ_COMPLETE;
 	zev.context = usr_context;
 	zev.status = z_map_err(wc->status);
@@ -847,6 +856,7 @@ static void process_write_wc(struct z_rdma_ep *rep, struct ibv_wc *wc,
 			     void *usr_context)
 {
 	struct zap_event zev;
+	memset(&zev, 0 ,sizeof(zev));
 	zev.type = ZAP_EVENT_WRITE_COMPLETE;
 	zev.context = usr_context;
 	zev.status = z_map_err(wc->status);
@@ -870,8 +880,9 @@ static void handle_rendezvous(struct z_rdma_ep *rep,
 			      struct z_rdma_message_hdr *msg, size_t len)
 {
 	struct zap_event zev;
+	memset(&zev, 0 ,sizeof(zev));
 	struct z_rdma_share_msg *sh = (struct z_rdma_share_msg *)msg;
-	struct z_rdma_map *map;
+	struct z_rdma_map *map = NULL;
 
 	map = calloc(1, sizeof(*map));
 	if (!map)
@@ -998,7 +1009,7 @@ static zap_err_t z_rdma_reject(zap_ep_t ep, char *data, size_t data_len)
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
 	int rc;
 
-	struct z_rdma_reject_msg *msg;
+	struct z_rdma_reject_msg *msg = NULL;
 	size_t len = sizeof(*msg) + data_len;
 	msg = calloc(1, len);
 	if (!msg) {
@@ -1024,7 +1035,8 @@ static zap_err_t z_rdma_accept(zap_ep_t ep, zap_cb_fn_t cb,
 {
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
 	struct rdma_conn_param conn_param;
-	struct z_rdma_accept_msg *msg;
+	memset(&conn_param, 0 ,sizeof(conn_param));
+	struct z_rdma_accept_msg *msg = NULL;
 
 	int ret;
 
@@ -1099,6 +1111,7 @@ char *err_msg[] = {
 static int cq_event_handler(struct ibv_cq *cq, int count)
 {
 	struct ibv_wc wc;
+	memset(&wc,0, sizeof(wc));
 	int rc, poll_count = 0;
 
 	while (count-- && ((rc = ibv_poll_cq(cq, 1, &wc)) == 1)) {
@@ -1174,13 +1187,15 @@ static void *cq_thread_proc(void *arg)
 {
 	int cq_fd = (int)(unsigned long)arg;
 	struct epoll_event cq_events[16];
-	struct z_rdma_ep *rep;
+	memset(&cq_events, 0, sizeof(cq_events));
+	struct z_rdma_ep *rep = 0;
 	int i;
-	struct ibv_cq *ev_cq;
-	void *ev_ctx;
+	struct ibv_cq *ev_cq = NULL;
+	void *ev_ctx = NULL;
 	int ret;
 	int rc;
 	sigset_t sigset;
+	memset(&sigset, 0, sizeof(sigset));
 
 	sigfillset(&sigset);
 	rc = pthread_sigmask(SIG_BLOCK, &sigset, NULL);
@@ -1338,6 +1353,7 @@ static void
 handle_addr_resolved(struct z_rdma_ep *rep, struct rdma_cm_id *cma_id)
 {
 	struct zap_event zev;
+	memset(&zev,0,sizeof(zev));
 	int ret;
 	assert(rep->ep.state == ZAP_EP_CONNECTING);
 	ret = rdma_resolve_route(cma_id, 2000);
@@ -1356,8 +1372,10 @@ static void
 handle_connect_request(struct z_rdma_ep *rep, struct rdma_cm_event *event)
 {
 	zap_ep_t new_ep;
-	struct z_rdma_ep *new_rep;
+	memset(&new_ep,0,sizeof(new_ep));
+	struct z_rdma_ep *new_rep = NULL;
 	struct zap_event zev = {0};
+	memset(&zev,0,sizeof(zev));
 	assert(rep->ep.state == ZAP_EP_LISTENING);
 	zev.type = ZAP_EVENT_CONNECT_REQUEST;
 	zev.status = ZAP_ERR_OK;
@@ -1406,6 +1424,8 @@ handle_route_resolved(struct z_rdma_ep *rep, struct rdma_cm_id *cma_id)
 {
 	struct rdma_conn_param conn_param;
 	struct zap_event zev;
+	memset(&zev,0,sizeof(zev));
+	memset(&conn_param,0,sizeof(conn_param));
 	int ret;
 	assert(rep->ep.state == ZAP_EP_CONNECTING);
 	ret = __rdma_setup_conn(rep);
@@ -1440,6 +1460,7 @@ static void
 handle_conn_error(struct z_rdma_ep *rep, struct rdma_cm_id *cma_id, int reason)
 {
 	struct zap_event zev = {0};
+	memset(&zev,0,sizeof(zev));
 	zev.status = reason;
 	if (rep->cq_channel)
 		__enable_cq_events(rep);
@@ -1494,6 +1515,7 @@ handle_rejected(struct z_rdma_ep *rep, struct rdma_cm_id *cma_id,
 {
 	struct z_rdma_reject_msg *rej_msg = NULL;
 	struct zap_event zev = {0};
+	memset(&zev,0,sizeof(zev));
 	zev.status = ZAP_ERR_CONNECT;
 
 	/* State before being rejected is CONNECTING, but
@@ -1540,10 +1562,10 @@ static void
 handle_established(struct z_rdma_ep *rep, struct rdma_cm_event *event)
 {
 	struct z_rdma_accept_msg *msg = NULL;
-	struct zap_event zev = {
-		.type = ZAP_EVENT_CONNECTED,
-		.status = ZAP_ERR_OK,
-	};
+	struct zap_event zev;
+	memset(&zev,0,sizeof(zev));
+	zev.type = ZAP_EVENT_CONNECTED;
+	zev.status = ZAP_ERR_OK;
 	switch (rep->ep.state) {
 	case ZAP_EP_CONNECTING:
 	case ZAP_EP_ACCEPTING:
@@ -1574,10 +1596,10 @@ handle_established(struct z_rdma_ep *rep, struct rdma_cm_event *event)
 
 static void _rdma_deliver_disconnected(struct z_rdma_ep *rep)
 {
-	struct zap_event zev = {
-		.type = ZAP_EVENT_DISCONNECTED,
-		.status = ZAP_ERR_OK,
-	};
+	struct zap_event zev;
+	memset(&zev,0,sizeof(zev));
+	zev .type = ZAP_EVENT_DISCONNECTED;
+	zev.status = ZAP_ERR_OK;
 	rep->ep.cb(&rep->ep, &zev);
 	__zap_put_ep(&rep->ep); /* Release the last reference */
 }
@@ -1689,7 +1711,7 @@ static void cma_event_handler(struct z_rdma_ep *rep,
 static void handle_cm_event(struct z_rdma_ep *rep)
 {
 	int rc;
-	struct rdma_cm_event *event;
+	struct rdma_cm_event *event = NULL;
 
 	rc = rdma_get_cm_event(rep->cm_channel, &event);
 	if (rc)
@@ -1715,7 +1737,8 @@ static void *cm_thread_proc(void *arg)
 {
 	int cm_fd = (int)(unsigned long)arg;
 	struct epoll_event cm_events[16];
-	struct z_rdma_ep *rep;
+	memset(cm_events,0,sizeof(cm_events));
+	struct z_rdma_ep *rep = NULL;
 	int ret, i;
 	int rc;
 	sigset_t sigset;
@@ -1755,6 +1778,7 @@ z_rdma_listen(zap_ep_t ep, struct sockaddr *sin, socklen_t sa_len)
 	int rc;
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
 	struct epoll_event cm_event;
+	memset(&cm_event,0,sizeof(cm_event));
 
 	zerr = zap_ep_change_state(&rep->ep, ZAP_EP_INIT, ZAP_EP_LISTENING);
 	if (zerr) {
@@ -1827,10 +1851,10 @@ z_rdma_listen(zap_ep_t ep, struct sockaddr *sin, socklen_t sa_len)
  */
 static int send_credit_update(struct z_rdma_ep *rep)
 {
-	struct z_rdma_message_hdr *req;
-	struct z_rdma_buffer *rbuf;
-	struct z_rdma_context *ctxt;
-	struct ibv_send_wr *bad_wr;
+	struct z_rdma_message_hdr *req = NULL;
+	struct z_rdma_buffer *rbuf = NULL;
+	struct z_rdma_context *ctxt = NULL;
+	struct ibv_send_wr *bad_wr = NULL;
 	int rc;
 
 	rbuf = __rdma_buffer_alloc(rep, RQ_BUF_SZ, IBV_ACCESS_LOCAL_WRITE);
@@ -1898,8 +1922,8 @@ static zap_err_t z_get_name(zap_ep_t ep, struct sockaddr *local_sa,
 static zap_err_t z_rdma_send(zap_ep_t ep, char *buf, size_t len)
 {
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
-	struct z_rdma_message_hdr *hdr;
-	struct z_rdma_buffer *rbuf;
+	struct z_rdma_message_hdr *hdr = NULL;
+	struct z_rdma_buffer *rbuf = NULL;
 	zap_err_t rc;
 
 	pthread_mutex_lock(&rep->ep.lock);
@@ -1941,8 +1965,8 @@ static zap_err_t z_rdma_share(zap_ep_t ep, zap_map_t map,
 {
 	struct z_rdma_map *rmap = (struct z_rdma_map *)map;
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
-	struct z_rdma_share_msg *sm;
-	struct z_rdma_buffer *rbuf;
+	struct z_rdma_share_msg *sm = NULL;
+	struct z_rdma_buffer *rbuf = NULL;
 	zap_err_t rc;
 	size_t sz = sizeof(*sm) + msg_len;
 
@@ -1990,7 +2014,7 @@ z_rdma_map(zap_ep_t ep, zap_map_t *pm,
 {
 	zap_mem_info_t mem_info = ep->z->mem_info_fn();
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
-	struct z_rdma_map *map;
+	struct z_rdma_map *map = NULL;
 	int acc_flags;
 
 	map = calloc(1, sizeof(*map));
@@ -2045,8 +2069,8 @@ static zap_err_t z_rdma_write(zap_ep_t ep,
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
 	struct z_rdma_map *rmap = (struct z_rdma_map *)dst_map;
 	struct z_rdma_map *lmap = (struct z_rdma_map *)src_map;
-	struct ibv_send_wr *bad_wr;
-	struct z_rdma_context *ctxt;
+	struct ibv_send_wr *bad_wr = NULL;
+	struct z_rdma_context *ctxt = NULL;
 
 	pthread_mutex_lock(&rep->ep.lock);
 	rc = __ep_state_check(rep);
@@ -2102,8 +2126,8 @@ static zap_err_t z_rdma_read(zap_ep_t ep,
 	struct z_rdma_ep *rep = (struct z_rdma_ep *)ep;
 	struct z_rdma_map *lmap = (struct z_rdma_map *)dst_map;
 	struct z_rdma_map *rmap = (struct z_rdma_map *)src_map;
-	struct ibv_send_wr *bad_wr;
-	struct z_rdma_context *ctxt;
+	struct ibv_send_wr *bad_wr = NULL;
+	struct z_rdma_context *ctxt = NULL;
 
 	pthread_mutex_lock(&rep->ep.lock);
 	rc = __ep_state_check(rep);
