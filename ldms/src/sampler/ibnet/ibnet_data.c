@@ -618,7 +618,6 @@ void ibnet_data_sample(struct ibnet_data *d)
 
 	if (d->port_timing) {
 		gettimeofday(&tv[0], 0);
-		ldms_transaction_begin(d->timing_set);
 	}
 	struct ib_port *port;
 	LIST_FOREACH(port, &(d->ports), entry) {
@@ -639,6 +638,7 @@ void ibnet_data_sample(struct ibnet_data *d)
 		timersub(&tv[2], &tv[1], &tv_diff);
 		dtprocess = tv_diff.tv_sec + tv_diff.tv_usec *1e-6;
 
+		ldms_transaction_begin(d->timing_set);
 		v.v_d = dtquery;
 		ldms_metric_set(d->timing_set, d->index_ib_query_time, &v);
 
