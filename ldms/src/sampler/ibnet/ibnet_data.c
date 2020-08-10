@@ -649,7 +649,8 @@ void ibnet_data_sample(struct ibnet_data *d)
 	/* } */
 	struct ib_port *port;
 	LIST_FOREACH(port, &(d->ports), entry) {
-		if (port-> last_fail.tv_sec == 0 || tv[0].tv_sec > port->last_fail.tv_sec + d->delta_retry) {
+		if (port-> last_fail.tv_sec == 0 ||
+			tv[0].tv_sec > port->last_fail.tv_sec + d->delta_retry) {
 			port->last_fail.tv_sec = 0;
 			port_query(d, port, &tv[0]);
 		}
@@ -1179,7 +1180,7 @@ static void port_query(struct ibnet_data *d, struct ib_port *port, struct timeva
 		return;
 
 	struct timeval qtv_diff, qtv_now, qtv_prev;
-	if (d->port_timing == 2) {
+	if (d->port_timing >= 2) {
 		port->qtime = 0;
 		port->stime = 0;
 		gettimeofday(&qtv_prev, 0);
