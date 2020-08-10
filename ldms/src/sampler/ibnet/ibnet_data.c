@@ -839,7 +839,7 @@ const char * timing_schema)
 	}
 	if (d->port_timing == 3) {
 		MADD("port_query_offset");
-		rc = ldms_schema_metric_add(d->port_schema, "port_query_offset", LDMS_V_D64);
+		rc = ldms_schema_metric_add(d->port_schema, "port_query_offset", LDMS_V_S32);
 		if (rc < 0)
 			goto err2;
 		d->index_port_query_offset = rc;
