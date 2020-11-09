@@ -305,17 +305,43 @@ static int __enable_cq_events(struct z_fi_ep *rep)
 	/* handle CQ events */
 	struct epoll_event cq_event = {
 		.events = EPOLLIN,
-		.data.ptr = rep,
 	};
 
-	__zap_get_ep(&rep->ep, "CQFD");
-	if (epoll_ctl(g.cq_fd, EPOLL_CTL_ADD, rep->cq_fd, &cq_event)) {
-		LOG_(rep, "error %d adding CQ to epoll wait set\n", errno);
-		__zap_put_ep(&rep->ep, "CQFD");
-		return errno;
+	if (rep->rq_cq.fd >= 0) {
+		__zap_get_ep(&rep->ep, "RQ-CQFD");
+		cq_event.data.ptr = &rep->rq_cq;
+		if (epoll_ctl(g.cq_fd, EPOLL_CTL_ADD, rep->rq_cq.fd, &cq_event)) {
+			LOG_(rep, "error %d adding RQ-CQ to epoll wait set\n", errno);
+			__zap_put_ep(&rep->ep, "RQ-CQFD");
+			return errno;
+		}
+	}
+	if (rep->sq_cq.fd >= 0) {
+		__zap_get_ep(&rep->ep, "SQ-CQFD");
+		cq_event.data.ptr = &rep->sq_cq;
+		if (epoll_ctl(g.cq_fd, EPOLL_CTL_ADD, rep->sq_cq.fd, &cq_event)) {
+			LOG_(rep, "error %d adding SQ-CQ to epoll wait set\n", errno);
+			__zap_put_ep(&rep->ep, "SQ-CQFD");
+			return errno;
+		}
 	}
 
 	return 0;
+}
+
+static void __disable_cq_events(struct z_fi_ep *rep, struct z_fi_cq *cq)
+{
+	struct epoll_event ignore;
+	const char *name = cq->for_sq ? "SQ-CQ" : "RQ-CQ";
+	const char *ref_name = cq->for_sq ? "SQ-CQFD" : "RQ-CQFD";
+	if (cq->fd < 0)
+		return;
+	if (epoll_ctl(g.cq_fd, EPOLL_CTL_DEL, cq->fd, &ignore)) {
+		LOG_(rep, "error %d removing %s from epoll wait set\n", name, errno);
+	} else {
+		__zap_put_ep(&rep->ep, ref_name);
+		cq->fd = -1;
+	}
 }
 
 static void __teardown_conn(struct z_fi_ep *ep)
@@ -343,8 +369,13 @@ static void __teardown_conn(struct z_fi_ep *ep)
 		if (ret)
 			LOG_(rep, "error %d closing libfabric passive endpoint\n", ret);
 	}
-	if (ep->cq) {
-		ret = fi_close(&ep->cq->fid);
+	if (ep->sq_cq.cq) {
+		ret = fi_close(&ep->sq_cq.cq->fid);
+		if (ret)
+			LOG_(rep, "error %d closing CQ\n", ret);
+	}
+	if (ep->rq_cq.cq) {
+		ret = fi_close(&ep->rq_cq.cq->fid);
 		if (ret)
 			LOG_(rep, "error %d closing CQ\n", ret);
 	}
@@ -369,7 +400,8 @@ static void __teardown_conn(struct z_fi_ep *ep)
 	rep->fi_ep = NULL;
 	rep->fi_pep = NULL;
 	rep->domain = NULL;
-	rep->cq = NULL;
+	rep->rq_cq.cq = NULL;
+	rep->sq_cq.cq = NULL;
 	rep->eq = NULL;
 	rep->buf_pool_mr = NULL;
 	rep->buf_pool = NULL;
@@ -541,7 +573,8 @@ __setup_conn(struct z_fi_ep *rep, struct sockaddr *sin, socklen_t sa_len)
 {
 	int ret;
 	struct fi_eq_attr eq_attr;
-	struct fi_cq_attr cq_attr;
+	struct fi_cq_attr rq_cq_attr;
+	struct fi_cq_attr sq_cq_attr;
 
 	eq_attr.wait_obj         = FI_WAIT_FD;
 	eq_attr.flags            = 0;
@@ -549,13 +582,17 @@ __setup_conn(struct z_fi_ep *rep, struct sockaddr *sin, socklen_t sa_len)
 	eq_attr.signaling_vector = 0;
 	eq_attr.wait_set         = NULL;
 
-	cq_attr.wait_obj         = FI_WAIT_FD;
-	cq_attr.format           = FI_CQ_FORMAT_DATA;
-	cq_attr.flags            = 0;
-	cq_attr.size             = RQ_DEPTH + SQ_DEPTH + 4;
-	cq_attr.signaling_vector = 0;
-	cq_attr.wait_cond        = FI_CQ_COND_NONE;
-	cq_attr.wait_set         = NULL;
+	rq_cq_attr.wait_obj         = FI_WAIT_FD;
+	rq_cq_attr.format           = FI_CQ_FORMAT_DATA;
+	rq_cq_attr.flags            = 0;
+	rq_cq_attr.size             = RQ_DEPTH + 2;
+	rq_cq_attr.signaling_vector = 0;
+	rq_cq_attr.wait_cond        = FI_CQ_COND_NONE;
+	rq_cq_attr.wait_set         = NULL;
+
+	/* sq_cq shares the same attributes with rq_cq, except for the size */
+	sq_cq_attr = rq_cq_attr;
+	sq_cq_attr.size             = SQ_DEPTH + 2;
 
 	ret = 0;
 	if (rep->parent_ep) {
@@ -572,11 +609,14 @@ __setup_conn(struct z_fi_ep *rep, struct sockaddr *sin, socklen_t sa_len)
 		     rep->fi->domain_attr->name);
 	}
 	ret = ret || fi_eq_open(rep->fabric, &eq_attr, &rep->eq, NULL);
-	ret = ret || fi_cq_open(rep->domain, &cq_attr, &rep->cq, NULL);
+	ret = ret || fi_cq_open(rep->domain, &rq_cq_attr, &rep->rq_cq.cq, NULL);
+	ret = ret || fi_cq_open(rep->domain, &sq_cq_attr, &rep->sq_cq.cq, NULL);
 	ret = ret || fi_control(&rep->eq->fid, FI_GETWAIT, &rep->cm_fd);
-	ret = ret || fi_control(&rep->cq->fid, FI_GETWAIT, &rep->cq_fd);
+	ret = ret || fi_control(&rep->rq_cq.cq->fid, FI_GETWAIT, &rep->rq_cq.fd);
+	ret = ret || fi_control(&rep->sq_cq.cq->fid, FI_GETWAIT, &rep->sq_cq.fd);
 	ret = ret || fi_ep_bind(rep->fi_ep, &rep->eq->fid, 0);
-	ret = ret || fi_ep_bind(rep->fi_ep, &rep->cq->fid, FI_RECV|FI_TRANSMIT);
+	ret = ret || fi_ep_bind(rep->fi_ep, &rep->rq_cq.cq->fid, FI_RECV);
+	ret = ret || fi_ep_bind(rep->fi_ep, &rep->sq_cq.cq->fid, FI_TRANSMIT);
 	ret = ret || fi_enable(rep->fi_ep);
 	ret = ret || _buffer_init_pool(rep);
 	ret = ret || z_fi_fill_rq(rep);
@@ -1347,7 +1387,7 @@ err_0:
 	return ret;
 }
 
-static void scrub_cq(struct z_fi_ep *rep)
+static void scrub_cq(struct z_fi_ep *rep, struct z_fi_cq *cq)
 {
 	int			ret;
 	struct z_fi_context	*ctxt;
@@ -1357,16 +1397,16 @@ static void scrub_cq(struct z_fi_ep *rep)
 	DLOG("rep %p\n", rep);
 	while (1) {
 		memset(&entry, 0, sizeof(entry));
-		ret = fi_cq_read(rep->cq, &entry, 1);
+		ret = fi_cq_read(cq->cq, &entry, 1);
 		if ((ret == 0) || (ret == -FI_EAGAIN)) {
-			fid[0] = &rep->cq->fid;
+			fid[0] = &cq->cq->fid;
 			ret = fi_trywait(rep->fabric, fid, 1);
 			if (ret == -FI_EAGAIN)
 				continue;
 			break;
 		}
 		if (ret == -FI_EAVAIL) {
-			fi_cq_readerr(rep->cq, &entry, 0);
+			fi_cq_readerr(cq->cq, &entry, 0);
 			if (entry.err != FI_ECANCELED) {
 				/* We got an error status, not flush. */
 				pthread_mutex_lock(&rep->ep.lock);
@@ -1427,7 +1467,10 @@ static void *cq_thread_proc(void *arg)
 {
 	int ret, i, n;
 	struct z_fi_ep *rep;
-	struct epoll_event cq_events[16], ignore;
+	struct z_fi_cq *cq;
+	struct epoll_event cq_events[16];
+	int n_drained_eps;
+	struct z_fi_ep *drained_eps[16];
 	sigset_t sigset;
 
 	sigfillset(&sigset);
@@ -1442,10 +1485,15 @@ static void *cq_thread_proc(void *arg)
 				continue;
 			break;
 		}
+		n_drained_eps = 0;
 		for (i = 0; i < n; i++) {
-			rep = cq_events[i].data.ptr;
+			cq = cq_events[i].data.ptr;
+			if (cq->for_sq)
+				rep = container_of(cq, struct z_fi_ep, sq_cq);
+			else
+				rep = container_of(cq, struct z_fi_ep, rq_cq);
 			__zap_get_ep(&rep->ep, "CQE");
-			scrub_cq(rep);
+			scrub_cq(rep, cq);
 			pthread_mutex_lock(&rep->ep.lock);
 			/*
 			 * We know an endpoint is shut down when the
@@ -1455,24 +1503,29 @@ static void *cq_thread_proc(void *arg)
 			 * SQ and RQ credits are exchanged.
 			 */
 			if (LIST_EMPTY(&rep->active_ctxt_list)) {
-				DLOG("rep %p ctxts drained\n", rep);
-				if (epoll_ctl(g.cq_fd, EPOLL_CTL_DEL, rep->cq_fd, &ignore)) {
-					LOG_(rep, "error %d removing CQ from epoll wait set\n", errno);
-				} else {
-					__zap_put_ep(&rep->ep, "CQFD");
-				}
-				if (rep->deferred_disconnected == 1) {
-					pthread_mutex_unlock(&rep->ep.lock);
-					__deliver_disconnected(rep);
-					rep->deferred_disconnected = -1;
-				} else {
-					pthread_mutex_unlock(&rep->ep.lock);
-				}
+				__zap_get_ep(&rep->ep, "DRAINED");
+				drained_eps[n_drained_eps++] = rep;
+				pthread_mutex_unlock(&rep->ep.lock);
 			} else {
 				pthread_mutex_unlock(&rep->ep.lock);
 				submit_pending(rep);
 			}
 			__zap_put_ep(&rep->ep, "CQE");
+		}
+		for (i = 0; i < n_drained_eps; i++) {
+			rep = drained_eps[i];
+			DLOG("rep %p ctxts drained\n", rep);
+			pthread_mutex_lock(&rep->ep.lock);
+			__disable_cq_events(rep, &rep->sq_cq);
+			__disable_cq_events(rep, &rep->rq_cq);
+			if (rep->deferred_disconnected == 1) {
+				pthread_mutex_unlock(&rep->ep.lock);
+				__deliver_disconnected(rep);
+				rep->deferred_disconnected = -1;
+			} else {
+				pthread_mutex_unlock(&rep->ep.lock);
+			}
+			__zap_put_ep(&rep->ep, "DRAINED");
 		}
 	}
 	return NULL;
@@ -1492,6 +1545,12 @@ static zap_ep_t z_fi_new(zap_t z, zap_cb_fn_t cb)
 	rep->rem_rq_credits = RQ_DEPTH;
 	rep->lcl_rq_credits = 0;
 	rep->sq_credits = SQ_DEPTH;
+
+	rep->rq_cq.for_sq =  0;
+	rep->rq_cq.fd     = -1;
+
+	rep->sq_cq.for_sq =  1;
+	rep->sq_cq.fd     = -1;
 
 	TAILQ_INIT(&rep->io_q);
 	LIST_INIT(&rep->active_ctxt_list);
@@ -1559,8 +1618,7 @@ static void handle_conn_error(struct z_fi_ep *rep, zap_err_t err)
 	zap_ep_state_t oldstate;
 
 	zev.status = err;
-	if (rep->cq_fd != -1)
-		__enable_cq_events(rep);
+	__enable_cq_events(rep);
 
 	oldstate = rep->ep.state;
 	rep->ep.state = ZAP_EP_ERROR;
@@ -2018,14 +2076,17 @@ static zap_err_t z_fi_listen(zap_ep_t ep, struct sockaddr *saddr, socklen_t sa_l
 
  err_1:
 	rc = epoll_ctl(g.cm_fd, EPOLL_CTL_DEL, rep->cm_fd, NULL);
-	fi_close(&rep->cq->fid);
+	fi_close(&rep->sq_cq.cq->fid);
+	fi_close(&rep->rq_cq.cq->fid);
 	fi_close(&rep->eq->fid);
 	fi_close(&rep->fi_pep->fid);
 	rep->fi_ep = NULL;
 	rep->fi_pep = NULL;
-	rep->cq = NULL;
+	rep->sq_cq.cq = NULL;
+	rep->rq_cq.cq = NULL;
 	rep->eq = NULL;
-	rep->cq_fd = -1;
+	rep->sq_cq.fd = -1;
+	rep->rq_cq.fd = -1;
 	rep->cm_fd = -1;
  err_0:
 	zap_ep_change_state(&rep->ep, ZAP_EP_LISTENING, ZAP_EP_ERROR);

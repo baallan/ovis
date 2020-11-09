@@ -177,6 +177,12 @@ struct z_fi_conn_data {
 #define ACCEPT_DATA_MAX (196)
 #define ZAP_ACCEPT_DATA_MAX ACCEPT_DATA_MAX
 
+struct z_fi_cq {
+	struct fid_cq *cq;
+	int for_sq; /* 1 if the cq is for sq, 0 if the cq is for rq */
+	int fd;  /* notification channel fd */
+};
+
 struct z_fi_ep {
 	struct zap_ep ep;
 
@@ -190,8 +196,8 @@ struct z_fi_ep {
 	struct fid_domain *domain;
 	struct fid_ep *fi_ep;
 	struct fid_pep *fi_pep;
-	struct fid_cq *cq;
-	int cq_fd;
+	struct z_fi_cq sq_cq;
+	struct z_fi_cq rq_cq;
 	int cq_fids_idx;
 	int eq_fids_idx;
 	int num_ctxts;
