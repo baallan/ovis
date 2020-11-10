@@ -798,7 +798,7 @@ static int print_header_from_store(struct csv_store_handle *s_handle, ldms_set_t
 
 	/* dump data types header, or whine and continue to other headers. */
 	if (s_handle->typeheader > 0 && s_handle->typeheader <= TH_MAX) {
-		fp = fopen(s_handle->typefilename, "w");
+		fp = fopen_perm(s_handle->typefilename, "w", LDMSD_DEFAULT_FILE_PERM);
 		if (!fp) {
 			int rc = errno;
 			PG.msglog(LDMSD_LERROR, PNAME ": print_header: %s "
