@@ -283,9 +283,9 @@ int main() {
 	us1 = 1000000* t1.tv_sec + t1.tv_usec;
 	us0 = 1000000* t0.tv_sec + t0.tv_usec;
 	du = us1 - us0;
-	printf("%u.06%u\n%u.%06u\nsample usec %" PRIu64 "\n",
-		t1.tv_sec, t1.tv_usec,
-		t0.tv_sec, t0.tv_usec, du);
+	printf("%u.06%lu\n%u.%06lu\nsample usec %" PRIu64 "\n",
+		t1.tv_sec, (long)t1.tv_usec,
+		t0.tv_sec, (long)t0.tv_usec, du);
 
 	printf("io test\n");
 	if (rc != 0) {
