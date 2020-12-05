@@ -169,7 +169,7 @@ void ldmsd_prdcr_set_ref_put(ldmsd_prdcr_set_t set)
 
 static void prdcr_set_del(ldmsd_prdcr_set_t set)
 {
-	set->state = LDMSD_PRDCR_SET_STATE_START;
+	set->state = LDMSD_PRDCR_SET_STATE_DELETED;
 	ldmsd_prdcr_set_ref_put(set);
 }
 
