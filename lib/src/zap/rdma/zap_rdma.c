@@ -708,6 +708,7 @@ _rdma_context_alloc(struct z_rdma_ep *rep,
 /* Must be called with the endpoint lock held */
 static void _rdma_context_free(struct z_rdma_context *ctxt)
 {
+	assert(ctxt->is_pending == 0); /* must not be in io_q */
 	LIST_REMOVE(ctxt, active_ctxt_link);
 	__zap_put_ep(ctxt->ep);
 	free(ctxt);
@@ -721,10 +722,12 @@ static void _rdma_context_free(struct z_rdma_context *ctxt)
 static int queue_io(struct z_rdma_ep *rep, struct z_rdma_context *ctxt)
 {
 	TAILQ_INSERT_TAIL(&rep->io_q, ctxt, pending_link);
+	ctxt->is_pending = 1;
 	return 0;
 }
 
 /* Must be called with the credit lock held */
+/* rep->ep.lock is not held */
 static void flush_io_q(struct z_rdma_ep *rep)
 {
 	struct z_rdma_context *ctxt;
@@ -735,6 +738,7 @@ static void flush_io_q(struct z_rdma_ep *rep)
 	while (!TAILQ_EMPTY(&rep->io_q)) {
 		ctxt = TAILQ_FIRST(&rep->io_q);
 		TAILQ_REMOVE(&rep->io_q, ctxt, pending_link);
+		ctxt->is_pending = 0;
 		switch (ctxt->op) {
 		case IBV_WC_SEND:
 			/*
@@ -761,7 +765,9 @@ static void flush_io_q(struct z_rdma_ep *rep)
 	free:
 		if (ctxt->rb)
 			__rdma_buffer_free(ctxt->rb);
+		pthread_mutex_lock(&rep->ep.lock);
 		__rdma_context_free(ctxt);
+		pthread_mutex_unlock(&rep->ep.lock);
 	}
 
 }
@@ -859,12 +865,15 @@ static void put_sq(struct z_rdma_ep *rep)
 /*
  * Walk the list of pending I/O and submit if there are sufficient
  * credits available.
+ *
+ * rep->ep.lock is not held
  */
 static void submit_pending(struct z_rdma_ep *rep)
 {
 	struct ibv_send_wr *badwr;
 	struct z_rdma_context *ctxt;
 	int is_rdma;
+	int rc;
 
 	pthread_mutex_lock(&rep->credit_lock);
 	while (!TAILQ_EMPTY(&rep->io_q)) {
@@ -874,11 +883,46 @@ static void submit_pending(struct z_rdma_ep *rep)
 			goto out;
 
 		TAILQ_REMOVE(&rep->io_q, ctxt, pending_link);
+		ctxt->is_pending = 0;
 
-		if (post_send(rep, ctxt, &badwr, is_rdma)) {
-			LOG("Error posting queued I/O.\n");
-			__rdma_context_free(ctxt);
+		rc = post_send(rep, ctxt, &badwr, is_rdma);
+		if (!rc)
+			continue;
+		/* otherwise, deliver completion with error status */
+		LOG("Error posting queued I/O. post_send() error %d "
+		    "rep %p ctxt %p\n", rc, rep, ctxt);
+		struct zap_event ev = { .status = ZAP_ERR_FLUSH, };
+		switch (ctxt->op) {
+		case IBV_WC_SEND:
+			/*
+			 * Zap version 1.3.0.0 doesn't have
+			 * the SEND_COMPLETE event
+			 */
+			goto free;
+			break;
+		case IBV_WC_RDMA_WRITE:
+			ev.type = ZAP_EVENT_WRITE_COMPLETE;
+			ev.context = ctxt->usr_context;
+			break;
+		case IBV_WC_RDMA_READ:
+			ev.type = ZAP_EVENT_READ_COMPLETE;
+			ev.context = ctxt->usr_context;
+			break;
+		case IBV_WC_RECV:
+		default:
+			assert(0 == "Invalid type");
+			break;
 		}
+		pthread_mutex_unlock(&rep->credit_lock);
+		rep->ep.cb(&rep->ep, &ev);
+		pthread_mutex_lock(&rep->credit_lock);
+
+	    free:
+		if (ctxt->rb)
+			__rdma_buffer_free(ctxt->rb);
+		pthread_mutex_lock(&rep->ep.lock);
+		__rdma_context_free(ctxt);
+		pthread_mutex_unlock(&rep->ep.lock);
 
 	}
  out:
@@ -1666,7 +1710,11 @@ handle_connect_request(struct z_rdma_ep *rep, struct rdma_cm_event *event)
 	new_rep = (struct z_rdma_ep *)new_ep;
 	new_rep->cm_id = cma_id;
 	new_rep->parent_ep = rep;
-	new_rep->dev_type = rep->dev_type;
+	if (0 == strncasecmp("hfi1", new_rep->cm_id->verbs->device->name, 4)) {
+		new_rep->dev_type = Z_RDMA_DEV_HFI1;
+	} else {
+		new_rep->dev_type = rep->dev_type;
+	}
 	__zap_get_ep(&rep->ep); /* Release when the new endpoint is destroyed */
 	cma_id->context = new_rep;
 	zap_ep_change_state(new_ep, ZAP_EP_INIT, ZAP_EP_ACCEPTING);
@@ -1993,6 +2041,7 @@ const char *_rdma_cm_event_type_str[] = {
 	[RDMA_CM_EVENT_ADDR_CHANGE]       =  "RDMA_CM_EVENT_ADDR_CHANGE",
 	[RDMA_CM_EVENT_TIMEWAIT_EXIT]     =  "RDMA_CM_EVENT_TIMEWAIT_EXIT"
 };
+__attribute__((unused))
 static const char * rdma_cm_event_type_str(enum rdma_cm_event_type type)
 {
 	if (type <= RDMA_CM_EVENT_TIMEWAIT_EXIT)
@@ -2016,6 +2065,7 @@ static void handle_cm_event(struct z_rdma_ep *rep)
 	 * cm_id context, not the one from the cm_channel.
 	 */
 	rep = (struct z_rdma_ep *)cm_id->context;
+	__zap_get_ep(&rep->ep);
 	DLOG("cm_event cm_id %p rep %p listen_id %p event %d %s "
 	     "status %d \n", cm_id, rep, event->listen_id, event->event,
 	     rdma_cm_event_type_str(event->event), event->status);
@@ -2034,11 +2084,10 @@ static void handle_cm_event(struct z_rdma_ep *rep)
 		 * remove the passive endpoints from the channel. So,
 		 * the TIMEWAIT_EXIT events can reach here.
 		 */
-		__zap_get_ep(&rep->ep);
 		cma_event_handler(rep, cm_id, event);
-		__zap_put_ep(&rep->ep);
 	}
 	rdma_ack_cm_event(event);
+	__zap_put_ep(&rep->ep);
 }
 
 /*
@@ -2119,13 +2168,6 @@ z_rdma_listen(zap_ep_t ep, struct sockaddr *sin, socklen_t sa_len)
 		goto err_2;
 	}
 
-	DLOG("listening cm_id %p created (rep %p), device %s\n",
-			rep->cm_id, rep, rep->cm_id->verbs->device->name);
-
-	if (0 == strncasecmp("hfi1", rep->cm_id->verbs->device->name, 4)) {
-		rep->dev_type = Z_RDMA_DEV_HFI1;
-	}
-
 	zerr = ZAP_ERR_RESOURCE;
 	rc = __enable_cm_events(rep);
 	if (rc)
@@ -2143,7 +2185,8 @@ z_rdma_listen(zap_ep_t ep, struct sockaddr *sin, socklen_t sa_len)
 	getnameinfo(sin, sa_len, host, sizeof(host), svc, sizeof(svc),
 			NI_NUMERICHOST|NI_NUMERICSERV);
 	LOG("listening on device %s, addr %s:%s\n",
-			rep->cm_id->verbs->device->name, host, svc);
+		rep->cm_id->verbs?rep->cm_id->verbs->device->name:"UNKNOWN",
+		host, svc);
 
 	return ZAP_ERR_OK;
 

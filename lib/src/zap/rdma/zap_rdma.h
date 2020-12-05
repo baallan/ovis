@@ -127,6 +127,8 @@ struct z_rdma_context {
 
 	TAILQ_ENTRY(z_rdma_context) pending_link; /* pending i/o */
 	LIST_ENTRY(z_rdma_context) active_ctxt_link;
+
+	int is_pending; /* for debugging */
 };
 
 #pragma pack(push, 1)
