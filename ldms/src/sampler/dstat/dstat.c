@@ -460,8 +460,8 @@ static int config(struct ldmsd_plugin *self, struct attr_value_list *kwl, struct
 	rc = ldmsd_plugattr_config_check(dstat_opts, dstat_words, avl, kwl,
 		NULL, SAMP);
 	if (rc) {
-		msglog(LDMSD_LERROR, SAMP ": bad config options.\n");
-		return EINVAL;
+		msglog(LDMSD_LWARNING, SAMP ": recheck config options.\n");
+		// return EINVAL;
 	}
 
 	char *sbuf = compute_pidopts_schema(kwl, avl);

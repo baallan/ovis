@@ -122,7 +122,7 @@ function get_prolog_name () {
 TESTDIR=$2
 
 if test -z "$2"; then
-	if test -n "LDMSNET"; then
+	if test -n "$LDMSNET"; then
 		TESTSUFF="-$LDMSNET"
 	fi
 	TESTDIR=`pwd`/ldmstest/$testname/$SLURM_JOBID.$SLURM_CLUSTER_NAME.$SLURM_JOB_NUM_NODES$TESTSUFF
@@ -167,6 +167,9 @@ function SEC_LEFT {
 		jt_sec=10
 		;;
 	esac
+	if test $jt_sec -lt 0; then
+		jt_sec=0
+	fi
 	echo $jt_sec
 }
 
@@ -226,6 +229,7 @@ function LDMSD {
 		echo $myproc: skipping sleep
 		return 0
 	fi
+	pidfilelist=""
 	prologs=""
 	loopprologs=""
 	bug=0
@@ -295,13 +299,18 @@ function LDMSD {
 			else
 				XVG=$VG
 			fi
-			if test -n "LDMSNET"; then
+			if test -n "$LDMSNET"; then
 				XVGSUFF=".$LDMSNET"
 			fi
-			if test -z "$VGARGS"; then
-				XVGARGS="-v --trace-children=yes --log-file=${LOGDIR}/vg.$i$VGTAG.%p$XVGSUFF"
+			if test "x$autolog" = "xno"; then
+				lo=""
 			else
-				XVGARGS="-v --trace-children=yes --log-file=${LOGDIR}/vg.$i$VGTAG.%p$XVGSUFF $VGARGS"
+				lo="--log-file=${LOGDIR}/vg.$i$VGTAG.%p$XVGSUFF"
+			fi
+			if test -z "$VGARGS"; then
+				XVGARGS="-v --trace-children=yes $lo"
+			else
+				XVGARGS="-v --trace-children=yes $lo $VGARGS"
 			fi
 			wrap="$XVG $XVGARGS"
 		else
@@ -316,6 +325,11 @@ function LDMSD {
 			insuff=$first
 		else
 			insuff=$i
+		fi
+		if test "x$autolog" = "xno"; then
+			lo=""
+		else
+			lo="-l ${LOGDIR}/$i.txt"
 		fi
 		if test -f $input.$insuff -a -r $input.$insuff ; then
 			echo "# generated from $input" > $LDMSD_RUN/conf.$i
@@ -345,13 +359,13 @@ function LDMSD {
 			echo $wrap ldmsd.${ports[$i]} \
 				-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 				-c $LDMSD_RUN/conf.$i \
-				-l ${LOGDIR}/$i.txt \
+				$lo \
 				-v DEBUG $LDMSD_EXTRA \
 				-r $LDMSD_PIDFILE.$i > $LDMSD_RUN/start.$i
 			$wrap ldmsd.${ports[$i]} \
 				-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 				-c $LDMSD_RUN/conf.$i \
-				-l ${LOGDIR}/$i.txt \
+				$lo \
 				-v DEBUG $LDMSD_EXTRA \
 				-r $LDMSD_PIDFILE.$i
 		else
@@ -362,33 +376,36 @@ function LDMSD {
 				echo $wrap ldmsd.${ports[$i]} \
 					-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-c $LDMSD_RUN/conf.$i \
-					-l ${LOGDIR}/$i.txt \
+					$lo \
 					-v DEBUG $LDMSD_EXTRA \
 					-r $LDMSD_PIDFILE.$i > $LDMSD_RUN/start.$i
 				$wrap ldmsd.${ports[$i]} \
 					-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-c $LDMSD_RUN/conf.$i \
-					-l ${LOGDIR}/$i.txt \
+					$lo \
 					-v DEBUG $LDMSD_EXTRA \
 					-r $LDMSD_PIDFILE.$i
 			else
 				echo $myproc: IDLE DAEMON $i
 				env > $LDMSD_RUN/env.$i
 				echo ldmsd.${ports[$i]} -x ${XPRT}:${ports[$i]} \
-					-l ${LOGDIR}/$i.txt \
+					$lo \
 					-v DEBUG \
 					-r $LDMSD_PIDFILE.$i > $LDMSD_RUN/start.$i
 				ldmsd.${ports[$i]} -x ${XPRT}:${ports[$i]} \
-					-l ${LOGDIR}/$i.txt \
+					$lo \
 					-v DEBUG \
 					-r $LDMSD_PIDFILE.$i
 			fi
 		fi
 		usleep $startwait
-		if ! test -f $LDMSD_PIDFILE.$i; then
-			echo FAIL: $myproc: failed to start $i $XPRTHOST. check ${LOGDIR}/$i.txt
-			#bypass=1
-			break;
+		pidfilelist="$pidfilelist $LDMSD_PIDFILE.$i"
+	done
+	for pf in $pidfilelist; do
+		if ! test -f $pf; then
+			echo FAIL: $myproc: failed to start on $XPRTHOST. missing $pf check ${LOGDIR}/\$i.txt
+			# bypass=1
+			# break;
 		fi
 	done
 }
@@ -418,7 +435,7 @@ function LDMS_LS {
 			else
 				XVG=$VG
 			fi
-			if test -n "LDMSNET"; then
+			if test -n "$LDMSNET"; then
 				XVGSUFF=".$LDMSNET"
 			fi
 			if test -z "$VGARGS"; then
@@ -544,8 +561,13 @@ function SLEEP() {
 		echo skipping sleep
 		return 0
 	fi
-	echo -n $myproc: sleep $1 ...
-	sleep $1
+	local st=$1
+	if test $1 -lt 0; then
+		st=0
+		echo $myproc: ignoring negative sleep $1
+	fi
+	echo -n $myproc: sleep $st ...
+	sleep $st
 	echo $myproc: done
 }
 
