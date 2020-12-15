@@ -5,8 +5,14 @@
 # before launching pll-ldms-static-test.sh.
 portbase=59000
 ulimit -n 100000
+if test -z "$NFLAP"; then
+	NFLAP=7
+fi
+if test -z "$AFLAP"; then
+	AFLAP=7
+fi
 MESSAGE starting l1, l2 aggs and collectors
-VGARGS="--tool=drd --time-stamp=yes --gen-suppressions=all --track-origins=yes"
+#VGARGS="--tool=drd --time-stamp=yes --gen-suppressions=all"
 VGARGS="--track-origins=yes --leak-check=full --show-leak-kinds=definite --time-stamp=yes --gen-suppressions=all  --main-stacksize=256000000"
 if test -f $pkglibdir/ldms.supp; then
 	VGARGS="$VGARGS --suppressions=$pkglibdir/ldms.supp"
@@ -16,109 +22,101 @@ if test "x$maxdaemon" = "x"; then
 	maxdaemon=3
 fi
 DAEMONS `seq 1 $maxdaemon`
-LDMSD_EXTRA="-m 20k"
+SAMPLERLIST=`seq 3 $maxdaemon`
+SAMPLERSET=`seq -s, 3 $maxdaemon`
+L2LIST=1
+L2SET=1
+L1LIST=2
+L1SET=2
+LDMSD_EXTRA="-m 64k"
 VGTAG=.samp
+#vgon
 # start n-2 sampler daemons
-LDMSD -s 1000000 -c `seq 3 $maxdaemon`
+LDMSD -s 1000000 -c $SAMPLERLIST
 # scale m to handle maxdaemon
 # -m > 450 or so seems to be incompatible with arm/valgrind 3.13
-LDMSD_EXTRA="-P 14 -m 64M"
+LDMSD_EXTRA="-P 36 -m 256M"
 #vgon
 VGTAG=.L2
 # start L2 on daemon 1
-LDMSD 1 
-vgoff
-#vgon
-VGTAG=.L1
+LDMSD $L2LIST
+#vgoff
+vgon
+VGTAG=.L1flapsamplers
 # start L1 on daemon 2, with sampler daemons 3..maxdaemon
-LDMSD -s 3000000 -P pll.producer,`seq -s, 3 $maxdaemon` 2
+#autolog=no
+LDMSD -s 3000000 -P pll.producer,$SAMPLERSET $L1LIST
+#unset autolog
 vgoff
 SLEEP 1
 FILECNT_LDMSD 2 1 3
 #vgon
-LDMS_LS 1
-vgoff
-# stop all samplers and restart a few cycles
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-FILECNT_LDMSD 2 1 3
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-KILL_LDMSD `seq 3 $maxdaemon`
-SLEEP 2
-LDMSD -s 100000 -c `seq 3 $maxdaemon`
-SLEEP 10
-FILECNT_LDMSD 2 1 3
-#vgon
-LDMS_LS 2
+VGTAG=.LSL2
+LDMS_LS 1 -v
 #vgoff
+# stop all samplers and restart a few cycles
+KILL_LDMSD $SAMPLERLIST
+SLEEP 2
+FILECNT_LDMSD 2 1 3
+for flap in $(seq 1 $NFLAP); do
+	MESSAGE sampler flap $flap
+	LDMSD -s 100000 -c $SAMPLERLIST
+	SLEEP 20
+	FILECNT_LDMSD 2 1 3
+	KILL_LDMSD $SAMPLERLIST
+	SLEEP 3
+done
+
+VGTAG=.sampwhileflapL1
+#vgon
+LDMSD -s 100000 -c $SAMPLERLIST
+#vgoff
+SLEEP 120
+FILECNT_LDMSD 2 1 3
+VGTAG=.L1flap
+# flap L1
+KILL_LDMSD $L1LIST
+SLEEP 2
+#vgon
+LDMSD -s 300000 -P pll.producer,$SAMPLERSET $L1LIST
+#vgoff
+SLEEP 4
+for flap in $(seq 1 $AFLAP); do
+	MESSAGE L1 flap $flap
+	KILL_LDMSD $L1LIST
+	SLEEP 3
+	LDMSD -s 300000 -P pll.producer,$SAMPLERSET $L1LIST
+	SLEEP 30
+	FILECNT_LDMSD 2 1 3
+done
+
+SLEEP 120
+#vgon
+KILL_LDMSD $L1LIST
+SLEEP 3
+VGTAG=.L1flappingL2
+LDMSD -s 300000 -P pll.producer,$SAMPLERSET $L1LIST
+SLEEP 3
+VGTAG=.LSL1
+LDMS_LS 2 -v
+vgoff
+# flap l2 twice
+MESSAGE L2 flap 1
+KILL_LDMSD $L2LIST
+SLEEP 5
+LDMSD $L2LIST
+SLEEP 20
+MESSAGE L2 flap 2
+KILL_LDMSD $L2LIST
+SLEEP 5
+LDMSD $L2LIST
+SLEEP 20
 SLEEP $(( $(SEC_LEFT) - 20))
 # kill l2
-KILL_LDMSD 1
+KILL_LDMSD $L2LIST
 SLEEP 1
 # kill l1, samps
-KILL_LDMSD `seq 3 $maxdaemon` 2
+KILL_LDMSD $SAMPLERLIST $L1LIST
 SLEEP 1
 MESSAGE logs and data under ${TESTDIR}
-# chown -R baallan.baallan $TESTDIR
+chown -R baallan.baallan $TESTDIR

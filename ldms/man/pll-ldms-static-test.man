@@ -103,6 +103,11 @@ vgoff
 .br
 Turns off use of valgrind for any ldmsd or ldms_ls subsequently started.
 .TP
+autolog=no
+.br
+Disables log file use by ldmsd and valgrind, sending messages to stdout instead.
+This allows approximately correlating events across the logs.
+.TP
 file_created <filename> <daemon numbers>
 .br
 Verifies the local existence and readability of filename for the listed daemon(s).
