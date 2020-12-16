@@ -1,0 +1,13 @@
+* Man page changes
+* man page todos
+* split mcplist into mcplist and metamcplist; assign metamcplist as meta metrics instead of metrics
+* split tx2mon_set_metrics to tx2mon_set_metrics tx2mon_set_meta
+* fix options to match man page
+* fix set[] to be defined over TX2MON_MAX_CPU
+* convert contents of large switch macros (META, METRIC) into short macros that call a function
+* get rid of term.h, termio.h, and unused functions; no need for interactive terminal settings.
+* get rid of pthread.h, fcntl.h, any other included headers we don't actually need
+* sort out copyright notices:
+** identify cli-copied code by function and move it into another file with correct license header from github author.
+** Identify hp-origin code by declaration or function and move it into a file/header with their license. Move hp license header to that file.
+** Where current tx2mon.c code is essentially identical to meminfo.c and where you wrote the real-work code, keep it in tx2mon.c. Put current snl/ogc license header to tx2mon.c.

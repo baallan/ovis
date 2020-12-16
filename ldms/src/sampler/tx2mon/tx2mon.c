@@ -461,7 +461,7 @@ static int tx2mon_array_conv(void *s, int p, int idx, int i, uint32_t t)
 /*
  *     get_set() - Obsolete call, no longer used.
  *		       Return safe value, just in case.
- *		       */
+ */
 
 static ldms_set_t get_set(struct ldmsd_sampler *self)
 {

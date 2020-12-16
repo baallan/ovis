@@ -6,33 +6,21 @@
 Plugin_tx2mon - man page for the LDMS tx2mon plugin
 
 .SH SYNOPSIS
-Within ldmsd_controller
+Within ldmsd configuration
 .br
 config name=tx2mon [ <attr> = <value> ]
 
 .SH DESCRIPTION
-The tx2mon plugin provides cpu and soc information from /sys/bus/platform/devices/tx2mon/[socinfo, node<i>_raw]. Socinfo contains information about the number of cpus, cores and thread on the system while node<i>_raw contains values about each cpu identified (where i is an integer that identifies the cpu information). The values gathered from node<i>_cpu is then mapped to the data structure in /usr/include/tx2mon/mc_oper_region.h.
+The tx2mon plugin provides cpu and system-on-chip information from /sys/bus/platform/devices/tx2mon/[socinfo, node<i>_raw] and reports it in the same units as the tx2mon command-line utility.
 
 .SH CONFIGURATION ATTRIBUTE SYNTAX
 
+The standard options from sampler_base apply. The specific options for tx2mon are listed here
 .TP
 .BR config
-name=<plugin_name> component_id=<comp_id> set=<set_name> [noarray=<bool>]
+name=tx2mon <standard options> [arrays=<bool>] [auto-schema=<bool>]
 .br
- configuration line
 .RS
-.TP
-name=<plugin_name>
-.br
-This MUST be tx2mon.
-.TP
-producer=<pname>
-.br
-The producer string value.
-.TP
-instance=<set_name>
-.br
-The name of the metric set.
 .TP
 schema=<schema>
 .br
@@ -43,20 +31,65 @@ auto-schema=<bool>
 If true, change the schema name to tx2mon_$X, where $X will be
 a unique hex value derived from the data selection options. If both schema and auto-schema are given, for backward-compatibility auto-schema is ignored for the tx2mon plugin.
 .TP
-component_id=<comp_id>
+arrays=<bool>
 .br
-The component id numerical value.
-.TP
-noarray=<bool>
-.br
-Include the metrics from /user/include/mc_oper_region.sh and max and min values from all array metrics. If false (0) all metric array values will be included.
+For per-core data, report all array value elements if true. Report only maximum and minimum values if false. The default is true.
 .RE
 
-.SH DATA
-This reports metrics from /usr/include/tx2mon/mc_oper_region.h by default. If arrays are turned off (noarray=true) then only the max and min metric values of each array are included and all other values are supressed.
-Units on the /mc_oper_region.h metric values are uint32_t. The array, tmon_cpu, has uint16_t types.
 
-.SH EXAMPLES 
+.SH METRICS
+.PP
+The sampler_base standard metrics are included.
+The following data is reported in a set instance per socket.
+
+.nf
+node                 Number of socket i from
+                     /sys/bus/platform/devices/tx2mon/node<i>_raw
+.fi
+
+The metrics listed here are named as their respective fields in tx2mon/mc_oper_region.h. Where applicable, metrics are converted to the units listed here from the raw values.
+.nf
+node               Number of socket, i, as seen in file name
+                   /sys/bus/platform/devices/tx2mon/node<i>_raw
+cmd_status         ???????????
+counter            Snapshot value of the cpu. Reported as a string
+                   integer.
+temp_abs_max       Absolute maximum limit of temperature beyond
+                   which the SoC will throttle voltage and frequency.
+temp_soft_thresh   Soft limit of temperature beyond which the SoC will
+                   throttle voltage and frequency down.
+temp_hard_thresh   Hard limit of temperature beyond which the SoC will
+                   throttle voltage and frequency down.
+freq_cpu[MAX_CPUS_PER_SOC]   Frequency reading of each core.
+tmon_cpu[MAX_CPUS_PER_SOC]   Temperature reading of each core. (deg. C)
+tmon_soc_avg       Average temperature on the SoC. (deg. C)
+freq_mem_net       Frequency reading of the SoC and ring connection.
+                   More information can be found on ThunderX2 HRM.
+freq_socs          Internal block frequency.
+freq_socn          Internal block frequency.
+freq_max           Maximum limit of SoC frequency. Depend on the SKU.
+freq_min           Minimum limit of SoC frequency. Depend on the SKU.
+pwr_core           Power consumed by all cores on the SoC. (Watt).
+pwr_sram           Power consumed by all internal SRAM on the SoC. (Watt).
+pwr_mem            Power consumed by the LLC ring on the SoC. (Watt)
+                   More information can be found on the ThunderX2 HRM.
+pwr_soc            Power consumed by SoC blocks that are misc. (Watt)
+v_core             Voltage consumed by all cores on the SoC. (V)
+v_sram             Voltage consumed by all internal SRAM on the SoC. (V)
+v_mem              Voltage consumed by the LLC ring on the SoC. (V)
+                   More information can be found on the ThunderX2 HRM.
+v_soc              Voltage consumed by SoC blocks that are misc. (V).
+active_evt         Provides a list of active evens that are causing 
+                   throttling. (V). ????????
+temp_evt_cnt       Total number of temperature events.
+pwr_evt_cnt        Total number of power events.
+ext_evt_cnt        Total number of exteral events.
+temp_throttle_ms   Time duration of all temperature events in ms.
+pwr_throttle_ms    Time duration of all power events in ms.
+ext_throttle_ms    Time duration of all external events in ms.
+.fi
+
+.SH EXAMPLES
 .PP
 Within ldmsd_controller or a configuration file:
 .nf
@@ -66,41 +99,16 @@ start name=tx2mon interval=1000000
 .fi
 
 .SH NOTES
-.PP
-The definitions of all structure metrics in /usr/include/tx2mon/mc_oper_region.h are as follows. All resv<i> have been omitted from the metric list.
-uint32_t	cmd_status;			
-uint32_t	counter;			Snapshot value of the cpu. Reported as a string integer.
-uint32_t	temp_abs_max;			Absolute maximum limit of temperature beyond which the SoC will throttle voltage and frequency down.
-uint32_t	temp_soft_thresh;		Soft limit of temperature beyond which the SoC will throttle voltage and frequency down.
-uint32_t	temp_hard_thresh;		Hard limit of temperature beyond which the SoC will throttle voltage and frequency down.
-uint32_t	freq_cpu[MAX_CPUS_PER_SOC];	Frequency reading of each core. 
-uint16_t	tmon_cpu[MAX_CPUS_PER_SOC];	Temperature reading of each core. Converted to temp in C.
-uint32_t	tmon_soc_avg;			Average temperature on the SoC. Converted to temp in C.
-uint32_t	freq_mem_net;			Frequency reading of the SoC and ring connection. More information can be found on ThunderX2 HRM.
-uint32_t	freq_socs;			Internal block frequency.
-uint32_t	freq_socn;			Internal block frequency.
-uint32_t	freq_max;			Maximum limit of SoC frequency. Depend on the SKU.
-uint32_t	freq_min;			Minimum limit of SoC frequency. Depend on the SKU.
-uint32_t	pwr_core;			Power consumed by all cores on the SoC. Converted to power (W).
-uint32_t	pwr_sram;			Power consumed by all internal SRAM on the SoC. Converted to power (W).
-uint32_t	pwr_mem;			Power consumed by the LLC ring on the SoC. Converted to power (W). More information can be found on the ThunderX2 HRM.
-uint32_t	pwr_soc;			Power consumed by SoC blocks that are misc. Converted to power (W).
-uint32_t	v_core;				Voltage consumed by all cores on the SoC. Converted to voltage (V).
-uint32_t	v_sram;				Voltage consumed by all internal SRAM on the SoC. Converted to voltage (V).
-uint32_t	v_mem;				Voltage consumed by the LLC ring on the SoC. Converted to voltage (V). More information can be found on the ThunderX2 HRM.
-uint32_t	v_soc;				Voltage consumed by SoC blocks that are misc. Converted to voltage (V).
-uint32_t	active_evt;			Provides a list of active evens that are causing throttling. Converted to voltage (V).
-uint32_t	temp_evt_cnt;			Total number of temperature events.
-uint32_t	pwr_evt_cnt;			Total number of power events.
-uint32_t	ext_evt_cnt;			Total number of exteral events.
-uint32_t	temp_throttle_ms;		Time duration of all temperature events in ms.
-uint32_t	pwr_throttle_ms;		Time duration of all power events in ms.
-uint32_t	ext_throttle_ms;		Time duration of all external events in ms.
-
-The structure /usr/include/tx2mon/mc_oper_region.h is recycled for each new /sys/bus/platform/devices/tx2mon/node<i>_raw identified.
-.PP
-Requesting noarray (which may be high overhead) requires explicitly requesting it. 
-.PP
-
 .SH SEE ALSO
-ldmsd(8), README file for tx2mon plugin. 
+ldmsd(8), ldms_sampler_base
+.nf
+# todo:
+# Find reference to HRM, or drop references to HRM.
+# Do we know how tmon_soc_avg is calculated?
+# if arrays option is false, omit array metrics and add tmon_cpu_min/max and freq_cpu_min/max
+# Do we know the diff between freq_socs freq_socn?
+# v_core/sram/mem: is it really voltage consumed?
+# active_evt: we need to understand this better.
+# the _ms event times; does the utility also report these as ms or sec?
+# add anything important from README that is not already covered into the notes section.
+.fi
