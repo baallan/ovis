@@ -132,6 +132,25 @@ const char *auth_name = "none";
 struct attr_value_list *auth_opt = NULL;
 const int auth_opt_max = 128;
 
+/* base of relative time printed if verbose >=2 */
+static pthread_mutex_t log_lock = PTHREAD_MUTEX_INITIALIZER;
+struct timespec gts;
+struct timespec gtlast;
+/* log dt from start, from last logtime and given tag */
+#define LOGTIME(x) \
+if (verbose >=3) { \
+	if (!pthread_mutex_lock(&log_lock) ) { \
+		struct timespec now; \
+		clock_gettime(CLOCK_REALTIME, &now); \
+		int64_t telapsed = ldms_timespec_diff_us(&gts, &now); \
+		int64_t dtelapsed = ldms_timespec_diff_us(&gtlast, &now); \
+		gtlast = now; \
+		null_log("WTIME: %lu.%09ld, RTIME %" PRId64 " usec: %47s:L%d: \tdRT\t%" PRId64 "\n",\
+			now.tv_sec, now.tv_nsec, telapsed, x, __LINE__, dtelapsed); \
+		pthread_mutex_unlock(&log_lock); \
+	} \
+}
+
 void null_log(const char *fmt, ...)
 {
 	va_list ap;
@@ -365,6 +384,7 @@ static int long_format = 0;
 
 void print_cb(ldms_t t, ldms_set_t s, int rc, void *arg)
 {
+	LOGTIME(__func__);
 	int err;
 	unsigned long last = (unsigned long)arg;
 	err = LDMS_UPD_ERROR(rc);
@@ -380,6 +400,7 @@ void print_cb(ldms_t t, ldms_set_t s, int rc, void *arg)
 		if (!(rc & LDMS_UPD_F_PUSH_LAST)) {
 			/* This will trigger the last update */
 			ldms_xprt_cancel_push(s);
+			LOGTIME(__func__);
 			return;
 		}
 	}
@@ -417,6 +438,7 @@ void print_cb(ldms_t t, ldms_set_t s, int rc, void *arg)
 		done = 1;
 		pthread_cond_signal(&done_cv);
 	}
+	LOGTIME(__func__);
 }
 
 void lookup_cb(ldms_t t, enum ldms_lookup_status status, int more,
@@ -432,6 +454,7 @@ void lookup_cb(ldms_t t, enum ldms_lookup_status status,
 	       int more,
 	       ldms_set_t s, void *arg)
 {
+	LOGTIME(__func__);
 	unsigned long last = (unsigned long)arg;
 	if (status) {
 		last = 1;
@@ -442,6 +465,7 @@ void lookup_cb(ldms_t t, enum ldms_lookup_status status,
 		goto err;
 	}
 	ldms_xprt_update(s, print_cb, (void *)(unsigned long)(!more));
+	LOGTIME(__func__);
 	return;
  err:
 	printf("ldms_ls: Error %d looking up metric set.\n", status);
@@ -456,12 +480,14 @@ void lookup_cb(ldms_t t, enum ldms_lookup_status status,
 		pthread_cond_signal(&done_cv);
 		pthread_mutex_unlock(&done_lock);
 	}
+	LOGTIME(__func__);
 }
 
 void lookup_push_cb(ldms_t t, enum ldms_lookup_status status,
 		    int more,
 		    ldms_set_t s, void *arg)
 {
+	LOGTIME(__func__);
 	unsigned long last = (unsigned long)arg;
 	if (LDMS_UPD_ERROR(status)) {
 		/* Lookup failed, signal the main thread to finish up */
@@ -478,11 +504,13 @@ void lookup_push_cb(ldms_t t, enum ldms_lookup_status status,
 		 * ldms_ls will wait indefinitely. Get the update by pulling.
 		 */
 		ldms_xprt_update(s, print_cb, (void *)(unsigned long)(!more));
+		LOGTIME("lookup_push_cb: ldms_xprt_update done");
 		return;
 	}
 	/* Register this set for push updates */
 	ldms_xprt_register_push(s, LDMS_XPRT_PUSH_F_CHANGE, print_cb,
 					(void *)(unsigned long)(!more));
+	LOGTIME("lookup_push_cb: ldms_xprt_register_push done");
 	return;
  err:
 	printf("ldms_ls: Error %d looking up metric set.\n", status);
@@ -497,6 +525,7 @@ void lookup_push_cb(ldms_t t, enum ldms_lookup_status status,
 		pthread_cond_signal(&done_cv);
 		pthread_mutex_unlock(&done_lock);
 	}
+	LOGTIME("lookup_push_cb: err done");
 }
 
 long total_meta;
@@ -570,6 +599,7 @@ void __add_dir(ldms_dir_t dir)
 
 void dir_cb(ldms_t t, int status, ldms_dir_t _dir, void *cb_arg)
 {
+	LOGTIME(__func__);
 	int i;
 	int more;
 	if (status) {
@@ -600,11 +630,13 @@ void dir_cb(ldms_t t, int status, ldms_dir_t _dir, void *cb_arg)
 
  wakeup:
 	dir_done = 1;
+	LOGTIME(__func__);
 	pthread_cond_signal(&dir_cv);
 }
 
 void ldms_connect_cb(ldms_t x, ldms_xprt_event_t e, void *cb_arg)
 {
+	LOGTIME(__func__);
 	if ((e->type == LDMS_XPRT_EVENT_ERROR) ||
 			(e->type == LDMS_XPRT_EVENT_REJECTED)) {
 		printf("Connection failed/rejected.\n");
@@ -684,6 +716,8 @@ int main(int argc, char *argv[])
 		perror("sem_init");
 		_exit(-1);
 	}
+	clock_gettime(CLOCK_REALTIME, &gts);
+	gtlast = gts;
 
 	auth_opt = av_new(auth_opt_max);
 	if (!auth_opt) {
@@ -783,6 +817,7 @@ int main(int argc, char *argv[])
 			usage(argv);
 		}
 	}
+	LOGTIME("opts parsed");
 
 	h = gethostbyname(hostname);
 	if (!h) {
@@ -811,12 +846,14 @@ int main(int argc, char *argv[])
 		       mem_sz);
 		exit(1);
 	}
+	LOGTIME("ldms_init");
 
 	ldms = ldms_xprt_new_with_auth(xprt, null_log, auth_name, auth_opt);
 	if (!ldms) {
 		printf("Error creating transport.\n");
 		exit(1);
 	}
+	LOGTIME("ldms_xprt_new");
 
 	memset(&sin, 0, sizeof sin);
 	sin.sin_addr.s_addr = *(unsigned int *)(h->h_addr_list[0]);
@@ -834,6 +871,7 @@ int main(int argc, char *argv[])
 	hostname = NULL;
 	ret  = ldms_xprt_connect(ldms, (struct sockaddr *)&sin, sizeof(sin),
 				 ldms_connect_cb, NULL);
+	LOGTIME("ldms_xprt_connect");
 	if (ret) {
 		perror("ldms_xprt_connect");
 		exit(2);
@@ -844,6 +882,7 @@ int main(int argc, char *argv[])
 		/* Connection error/rejected */
 		exit(1);
 	}
+	LOGTIME("sem_wait(&conn_sem)");
 	pthread_mutex_init(&dir_lock, 0);
 	pthread_cond_init(&dir_cv, NULL);
 	pthread_mutex_init(&done_lock, 0);
@@ -868,6 +907,7 @@ int main(int argc, char *argv[])
 	if (optind == argc) {
 		/* List all existing metric sets */
 		ret = ldms_xprt_dir(ldms, dir_cb, NULL, 0);
+		LOGTIME("ldms_xprt_dir");
 		if (ret) {
 			printf("ldms_dir returned synchronous error %d\n",
 			      ret);
@@ -921,6 +961,7 @@ int main(int argc, char *argv[])
 	while (!dir_done)
 		ret = pthread_cond_timedwait(&dir_cv, &dir_lock, &ts);
 	pthread_mutex_unlock(&dir_lock);
+	LOGTIME("wait dir_done");
 	if (ret)
 		server_timeout();
 
@@ -942,6 +983,7 @@ int main(int argc, char *argv[])
 	char *name;
 	ldms_key_value_t info;
 	struct ldms_dir_set_s *set_data;
+	LOGTIME("setgroup start");
 	LIST_FOREACH(lss, &set_list, entry) {
 		if (0 == strcmp(GRP_SCHEMA_NAME, lss->set_data->schema_name)) {
 			info = lss->set_data->info;
@@ -970,6 +1012,7 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
+	LOGTIME("setgroup done");
 
 	if (verbose) {
 		printf("-------------- ------------------------ ------ ------ "
@@ -1000,6 +1043,7 @@ int main(int argc, char *argv[])
 	/*
 	 * Handle the long format (-l)
 	 */
+	LOGTIME("long format start");
 	while (!LIST_EMPTY(&set_list)) {
 		lss = LIST_FIRST(&set_list);
 		LIST_REMOVE(lss, entry);
@@ -1013,6 +1057,8 @@ int main(int argc, char *argv[])
 				       lu_cb_fn,
 				       (void *)(unsigned long)
 				       LIST_EMPTY(&set_list));
+		LOGTIME("ldms_xprt_lookup");
+		LOGTIME(lss->set_data->inst_name);
 		if (ret) {
 			printf("ldms_xprt_lookup returned %d for set '%s'\n",
 			       ret, lss->set_data->inst_name);
@@ -1021,21 +1067,26 @@ int main(int argc, char *argv[])
 		while (!print_done)
 			pthread_cond_wait(&print_cv, &print_lock);
 		pthread_mutex_unlock(&print_lock);
+		LOGTIME("wait print_done complete");
 		free(lss);
 	}
+	LOGTIME("long format done");
 	done = 1;
 done:
 	pthread_mutex_lock(&done_lock);
 	while (!done)
 		pthread_cond_wait(&done_cv, &done_lock);
 	pthread_mutex_unlock(&done_lock);
+	LOGTIME("wait done_lock complete");
 
 	while ((dir = LIST_FIRST(&dir_list))) {
 		LIST_REMOVE(dir, entry);
 		ldms_xprt_dir_free(ldms, dir->dir);
 		free(dir);
 	}
+	LOGTIME("ldms_xprt_dir_free complete");
 
 	ldms_xprt_close(ldms);
+	LOGTIME("ldms_xprt_closed");
 	exit(0);
 }
