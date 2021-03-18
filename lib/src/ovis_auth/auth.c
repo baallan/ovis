@@ -65,6 +65,7 @@
 #include <stdio.h>
 #include <arpa/inet.h>
 #include "auth.h"
+#include "ovis_util/util.h"
 
 #define _str(x) #x
 #define str(x) _str(x)
@@ -141,8 +142,10 @@ char *ovis_auth_get_secretword(const char *path, ovis_auth_log_fn_t log)
 	struct stat pstat;
 	if (stat(path, &pstat)) {
 		ret = errno;
+		char ebuf[80];
+		strerror_r(errno, ebuf, sizeof(ebuf));
 		log("Auth error: %s while trying to stat %s\n",
-			strerror(errno), path);
+			ebuf, path);
 		goto err;
 	}
 
