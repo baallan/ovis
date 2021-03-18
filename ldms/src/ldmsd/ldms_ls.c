@@ -685,6 +685,7 @@ int main(int argc, char *argv[])
 		_exit(-1);
 	}
 
+	ovis_strerror(0);
 	auth_opt = av_new(auth_opt_max);
 	if (!auth_opt) {
 		printf("ERROR: Not enough memory");

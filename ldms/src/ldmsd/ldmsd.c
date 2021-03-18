@@ -1649,6 +1649,7 @@ int main(int argc, char *argv[])
 	sigaddset(&sigset, SIGINT);
 	sigaddset(&sigset, SIGTERM);
 	sigaddset(&sigset, SIGABRT);
+	ovis_strerror(0);
 
 	auth_opt = av_new(AUTH_OPT_MAX);
 	if (!auth_opt) {
