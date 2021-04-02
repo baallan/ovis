@@ -123,6 +123,7 @@ OPTION_DEFAULT_ENABLE([ovis_ctrl], [ENABLE_OVIS_CTRL])
 OPTION_DEFAULT_ENABLE([ovis_util], [ENABLE_OVIS_UTIL])
 OPTION_DEFAULT_ENABLE([ovis_auth], [ENABLE_OVIS_AUTH])
 OPTION_DEFAULT_ENABLE([zap], [ENABLE_ZAP])
+OPTION_DEFAULT_DISABLE([rdc], [ENABLE_RDC])
 OPTION_DEFAULT_DISABLE([rdma], [ENABLE_RDMA])
 OPTION_DEFAULT_DISABLE([nola], [ENABLE_NOLA])
 OPTION_DEFAULT_DISABLE([fabric], [ENABLE_FABRIC])
@@ -800,6 +801,7 @@ ldms/src/sampler/cray_system_sampler/Makefile
 ldms/src/sampler/aries_mmr/Makefile
 ldms/src/sampler/aries_mmr/aries_mmr_set_configs/Makefile
 ldms/src/sampler/ibnet/Makefile
+ldms/src/sampler/rdc_sampler/Makefile
 ldms/src/sampler/slurm/Makefile
 ldms/src/sampler/spank/Makefile
 ldms/src/sampler/papi/Makefile
