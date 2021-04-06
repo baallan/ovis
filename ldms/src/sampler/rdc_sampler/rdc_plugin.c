@@ -92,7 +92,7 @@ static int config(struct ldmsd_plugin *self,
 	pthread_mutex_unlock(&inst->lock);
 	return 0;
  err:
-	rdcinfo_reset(inst);	
+	rdcinfo_reset(inst);
 	pthread_mutex_unlock(&inst->lock);
 	return rc;
 }

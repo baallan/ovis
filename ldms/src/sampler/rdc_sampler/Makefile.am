@@ -5,7 +5,7 @@ bin_SCRIPTS=
 bin_PROGRAMS=
 dist_man7_MANS =
 dist_man1_MANS =
-EXTRA_DIST = 
+EXTRA_DIST =
 
 AM_CPPFLAGS = @OVIS_INCLUDE_ABS@
 AM_LDFLAGS = @OVIS_LIB_ABS@
@@ -13,14 +13,14 @@ COMMON_LIBADD = -lsampler_base -lldms -lovis_util -lcoll \
                 @LDFLAGS_GETTIME@
 
 # with proper rdc present:
-#rdcinc = @ROCM_RDC_INC_INCDIR_FLAG@ 
+#rdcinc = @ROCM_RDC_INC_INCDIR_FLAG@
 #rdclib = -lrdc_bootstrap
 #rdcldflags = @ROCM_RDC_INC_LIBDIR_FLAG@ @ROCM_SMI_INC_LIBDIR_FLAG@
 
 # with just headers, no runtime
 rdcinc = -I/scratch1/baallan/rdc/include
-rdclib = 
-rdcldflags = 
+rdclib =
+rdcldflags =
 
 pkglib_LTLIBRARIES += librdc_sampler.la
 librdc_sampler_la_SOURCES = rdc_plugin.c rdcinfo.c rdcinfo.h
@@ -28,7 +28,7 @@ librdc_sampler_la_CFLAGS  = $(SAMPLER_CFLAGS) $(rdcinc)
 #librdc_sampler_la_LIBADD  = $(SAMPLER_LIBADD) -lrdc_bootstrap
 librdc_sampler_la_LIBADD  = $(SAMPLER_LIBADD) $(COMMON_LIBADD)
 #librdc_sampler_la_LDFLAGS = $(SAMPLER_LDFLAGS) @ROCM_RDC_INC_LIBDIR_FLAG@ @ROCM_SMI_INC_LIBDIR_FLAG@
-librdc_sampler_la_LDFLAGS = $(SAMPLER_LDFLAGS) 
+librdc_sampler_la_LDFLAGS = $(SAMPLER_LDFLAGS)
 
 bin_PROGRAMS += ldms_rdc_schema_name
 dist_man7_MANS += Plugin_rdc_sampler.man

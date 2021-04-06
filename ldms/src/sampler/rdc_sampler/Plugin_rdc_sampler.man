@@ -13,7 +13,7 @@ config name=rdc_sampler [ <attr>=<value> ]
 .SH DESCRIPTION
 The rdc_sampler plugin provides AMD gpu device data. Data sets may be wide or per-device.
 Plugins for the ldmsd (ldms daemon) are configured via ldmsd_controller
-or a configuration file. 
+or a configuration file.
 
 .SH CONFIGURATION ATTRIBUTE SYNTAX
 
