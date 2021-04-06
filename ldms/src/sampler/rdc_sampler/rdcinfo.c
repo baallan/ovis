@@ -64,7 +64,8 @@
 #include "ldmsd_plugattr.h"
 #include "coll/fnv_hash.h"
 
-static rdc_field_t default_field_ids[] = {
+/* the default array applies to vega20+ hardware. */
+static rdc_field_t default_field_ids_20[] = {
 	RDC_FI_GPU_CLOCK,
 	RDC_FI_MEM_CLOCK,
 	RDC_FI_MEMORY_TEMP,
@@ -81,7 +82,39 @@ static rdc_field_t default_field_ids[] = {
 	RDC_EVNT_XGMI_1_THRPUT
 };
 
-static const uint32_t num_fields_default = sizeof(default_field_ids)/sizeof(default_field_ids[0]);
+static const uint32_t num_fields_default_20 = sizeof(default_field_ids_20)/sizeof(default_field_ids_20[0]);
+
+/* expansion for metrics=v10 option */
+const char *default_metrics_10 = 
+	"RDC_FI_GPU_CLOCK,"
+	"RDC_FI_MEM_CLOCK,"
+	"RDC_FI_MEMORY_TEMP,"
+	"RDC_FI_GPU_TEMP,"
+	"RDC_FI_POWER_USAGE,"
+	"RDC_FI_PCIE_TX,"
+	"RDC_FI_PCIE_RX,"
+	"RDC_FI_GPU_UTIL,"
+	"RDC_FI_GPU_MEMORY_USAGE,"
+	"RDC_FI_GPU_MEMORY_TOTAL,"
+	"RDC_FI_ECC_CORRECT_TOTAL,"
+	"RDC_FI_ECC_UNCORRECT_TOTAL";
+
+/* expansion for metrics=v20 option */
+const char *default_metrics_20 = 
+	"RDC_FI_GPU_CLOCK,"
+	"RDC_FI_MEM_CLOCK,"
+	"RDC_FI_MEMORY_TEMP,"
+	"RDC_FI_GPU_TEMP,"
+	"RDC_FI_POWER_USAGE,"
+	"RDC_FI_PCIE_TX,"
+	"RDC_FI_PCIE_RX,"
+	"RDC_FI_GPU_UTIL,"
+	"RDC_FI_GPU_MEMORY_USAGE,"
+	"RDC_FI_GPU_MEMORY_TOTAL,"
+	"RDC_FI_ECC_CORRECT_TOTAL,"
+	"RDC_FI_ECC_UNCORRECT_TOTAL,"
+	"RDC_EVNT_XGMI_0_THRPUT,"
+	"RDC_EVNT_XGMI_1_THRPUT";
 
 /* FUNCTIONS */
 
@@ -211,9 +244,9 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 						&value);
 				if (result != RDC_ST_OK) {
 					INST_LOG(inst, LDMSD_LWARNING,
-						"%s:Failed to get (gpu %d: field: %d): %s\n",
+						"Failed to get (gpu %d: field: %s): %s\n",
 						inst->group_info.entity_ids[gindex],
-						inst->field_info.field_ids[findex],
+						field_id_string(inst->field_info.field_ids[findex]),
 						rdc_status_string(result));
 					continue;
 				}
@@ -244,9 +277,9 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 						&value);
 				if (result != RDC_ST_OK) {
 					INST_LOG(inst, LDMSD_LWARNING,
-						"%s:Failed to get (gpu %d: field: %d): %s\n",
+						"Failed to get (gpu %d: field: %s): %s\n",
 						inst->group_info.entity_ids[gindex],
-						inst->field_info.field_ids[findex],
+						field_id_string(inst->field_info.field_ids[findex]),
 						rdc_status_string(result));
 					continue;
 				}
@@ -267,14 +300,17 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 	return 0;
 }
 
+#endif
 static
 char *_help =
-"rdc_sb config synopsis:\n"
-"    config name=INST [COMMON_OPTIONS] [metrics=METRICS] \n"
+SAMP " config synopsis:\n"
+"    config name=INST [COMMON_OPTIONS] [metrics=METRICS] [shape=SHAPE]\n"
 "\n"
 "Option descriptions:\n"
 "    metrics   The comma-separated list of metrics to monitor.\n"
-"              See rdc_field_t in <rdc/rdc.h> for possible values.\n"
+"              See rdc_field_t in <rdc/rdc.h> for possible field names.\n"
+"              Additionally, special values 'v10' and 'v20' adjust the default set.\n"
+"              Only integer fields are supported by the sampler.\n"
 "    shape=SHAPE  Number indicating set layout to use (default: 0):\n"
 "                 0: one wide set, with metrics prefixed by \"gpu%d:\"\n"
 "                 1: one set per gpu.\n"
@@ -285,21 +321,26 @@ char *_help =
 "The default metrics list is:\n"
 ;
 
-const char *rdc_usage()
+char *rdcinfo_usage()
 {
 	dstring_t ds;
 	dstr_init2(&ds, 2048);
 	dstrcat(&ds, _help, DSTRING_ALL);
 	int i = 0;
-	for ( ; i < num_fields_default; i++) {
+	for ( ; i < num_fields_default_20; i++) {
 		dstrcat(&ds, "    ", 4);
-		dstrcat(&ds, field_id_string(default_field_ids[i]), DSTRING_ALL);
+		dstrcat(&ds, field_id_string(default_field_ids_20[i]), DSTRING_ALL);
 		dstrcat(&ds, "\n", 1);
 	}
+	dstrcat(&ds, "The v10 metric set is:\n", DSTRING_ALL);
+	dstrcat(&ds, default_metrics_10, DSTRING_ALL);
+	dstrcat(&ds, "\n", 1);
+	dstrcat(&ds, "The v20 metric set is:\n", DSTRING_ALL);
+	dstrcat(&ds, default_metrics_20, DSTRING_ALL);
+	dstrcat(&ds, "\n", 1);
 	char *r = dstr_extract(&ds);
 	return r;
 }
-#endif
 
 static uint32_t rdcinfo_hash(rdcinfo_inst_t inst)
 {
@@ -585,14 +626,19 @@ int rdcinfo_config(rdcinfo_inst_t inst, struct attr_value_list *avl)
 	const char *metrics = av_value(avl, "metrics");
 	uint32_t i;
 	if (!metrics) {
-		/* default to all metrics in default_field_ids */
-		for (i = 0; i < num_fields_default; i++)
-			inst->field_ids[i] = default_field_ids[i];
-		inst->num_fields = num_fields_default;
+		/* default to all metrics in default_field_ids_20 */
+		for (i = 0; i < num_fields_default_20; i++)
+			inst->field_ids[i] = default_field_ids_20[i];
+		inst->num_fields = num_fields_default_20;
 	} else {
 		char *tkn, *ptr;
 		INST_LOG(inst, LDMSD_LDEBUG, "metrics=%s.\n", metrics);
-		mt = strdup(metrics);
+		if (strcmp("v10",metrics) == 0)
+			mt = strdup(default_metrics_10);
+		else if (strcmp("v20",metrics) == 0)
+			mt = strdup(default_metrics_20);
+		else
+			mt = strdup(metrics);
 		if (!mt) {
 			INST_LOG(inst, LDMSD_LERROR, "out of memory parsing metrics=\n");
 			return ENOMEM;
@@ -783,25 +829,14 @@ out:
 
 int main(int argc, char **argv)
 {
+	if (argc == 2 && strcmp(argv[1],"-h")==0) {
+		char *u = rdcinfo_usage();
+		printf("%s\n",u);
+		return 0;
+	}
 	rdc_get_schema_name(argc, argv);
 	return 0;
 }
 
 void ldmsd_log(enum ldmsd_loglevel level, const char *fmt, ...) { }
-#if 0
-rdc_status_t rdc_field_unwatch(rdc_handle_t p_rdc_handle, rdc_gpu_group_t group_id, rdc_field_grp_t field_group_id) { return 1; }
-rdc_status_t rdc_group_field_destroy(rdc_handle_t p_rdc_handle, rdc_field_grp_t rdc_field_group_id) { return 1; }
-rdc_status_t rdc_group_gpu_destroy(rdc_handle_t p_rdc_handle, rdc_gpu_group_t p_rdc_group_id) { return 1; }
-rdc_status_t rdc_stop_embedded(rdc_handle_t p_rdc_handle) { return 1; }
-rdc_status_t rdc_shutdown() { return 1;}
-rdc_field_t get_field_id_from_name(const char* name) { return 0; }
-rdc_status_t rdc_init(uint64_t init_flags) { return 1; }
-rdc_status_t rdc_start_embedded(rdc_operation_mode_t op_mode, rdc_handle_t* p_rdc_handle ) { return 1; }
-rdc_status_t rdc_group_gpu_create(rdc_handle_t p_rdc_handle, rdc_group_type_t type, const char* group_name, rdc_gpu_group_t* p_rdc_group_id) { return 1; }
-rdc_status_t rdc_group_field_create(rdc_handle_t p_rdc_handle, uint32_t num_field_ids, rdc_field_t* field_ids, const char* field_group_name, rdc_field_grp_t* rdc_field_group_id) { return 1; }
-rdc_status_t rdc_group_gpu_get_info(rdc_handle_t p_rdc_handle, rdc_gpu_group_t p_rdc_group_id, rdc_group_info_t* p_rdc_group_info) { return 1; }
-rdc_status_t rdc_group_field_get_info(rdc_handle_t p_rdc_handle, rdc_field_grp_t rdc_field_group_id, rdc_field_group_info_t* field_group_info) { return 1; }
-rdc_status_t rdc_field_watch(rdc_handle_t p_rdc_handle, rdc_gpu_group_t group_id, rdc_field_grp_t field_group_id, uint64_t update_freq, double max_keep_age, uint32_t max_keep_samples) { return 1; }
-const char* rdc_status_string(rdc_status_t status) { return ""; }
-#endif
 #endif

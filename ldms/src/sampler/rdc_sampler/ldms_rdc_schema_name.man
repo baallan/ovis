@@ -20,12 +20,16 @@ See Plugin_rdc_sampler(7).
 .SH EXAMPLES
 .PP
 .nf
-ldms_rdc_schema_name metrics=FIXME schema=myrdc_sampler shape=0
+ldms_rdc_schema_name metrics=FIXME schema=myrdc_sampler shape=0 | grep -v ERROR
 myrdc_sampler_%d_%X
 
 ldms_rdc_schema_name metrics=FIXME shape=1
 rdc_sampler_%X
 .fi
+
+.SH NOTES
+The rdc libraries loaded by the plugin and the program may emit inconsequential error messages to stdout.
+One such begins with "<timestamp> ERROR RdcLibraryLoader.cc".
 
 .SH SEE ALSO
 Plugin_rdc_sampler(7)
