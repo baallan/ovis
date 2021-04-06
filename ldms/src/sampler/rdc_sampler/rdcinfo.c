@@ -567,17 +567,17 @@ int rdcinfo_config(rdcinfo_inst_t inst, struct attr_value_list *avl)
 
 	char *sbase = av_value(avl, "schema");
 	if (!sbase) {
+		strcpy(inst->schema_name_base, SAMP);
+	} else {
 		if (!strlen(sbase)) {
 			INST_LOG(inst, LDMSD_LERROR, "empty schema= given. Try again\n");
 			return EINVAL;
 		}
-		strcpy(inst->schema_name_base, SAMP);
-	} else {
 		if (strlen(sbase) >= MAX_SCHEMA_BASE) {
-		INST_LOG(inst, LDMSD_LERROR, " schema name > %d long: %s\n",
-			MAX_SCHEMA_BASE, sbase);
-			rc = EINVAL;
-			return rc;
+			INST_LOG(inst, LDMSD_LERROR, " schema name > %d long: %s\n",
+				MAX_SCHEMA_BASE, sbase);
+				rc = EINVAL;
+				return rc;
 		}
 		strcpy(inst->schema_name_base, sbase);
 	}
