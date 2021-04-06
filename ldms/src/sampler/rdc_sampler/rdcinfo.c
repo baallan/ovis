@@ -231,11 +231,7 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 			base_sample_begin(inst->base);
 			if (!inst->meta_done) {
 				char tmp[MAX_DEVICE_NAME];
-<<<<<<< HEAD
-				snprintf(tmp, sizeof(tmp), "gpu%d", 
-=======
 				snprintf(tmp, sizeof(tmp), "gpu%d",
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 					inst->group_info.entity_ids[gindex]);
 				ldms_metric_array_set_str(inst->devset[gindex],
 					inst->first_index, tmp);
@@ -247,11 +243,7 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 						inst->field_info.field_ids[findex],
 						&value);
 				if (result != RDC_ST_OK) {
-<<<<<<< HEAD
-					INST_LOG(inst, LDMSD_LWARNING, 
-=======
 					INST_LOG(inst, LDMSD_LWARNING,
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 						"%s:Failed to get (gpu %d: field: %d): %s\n",
 						inst->group_info.entity_ids[gindex],
 						inst->field_info.field_ids[findex],
@@ -267,11 +259,7 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 		inst->meta_done = 1;
 		break;
 	default:
-<<<<<<< HEAD
-		INST_LOG(inst, LDMSD_LERROR, "Unsupported shape=%" PRIu32 ".\n", 
-=======
 		INST_LOG(inst, LDMSD_LERROR, "Unsupported shape=%" PRIu32 ".\n",
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 			inst->shape);
 		return EINVAL;
 	}
@@ -336,11 +324,6 @@ rdcinfo_inst_t rdcinfo_new(ldmsd_msg_log_f log)
 		log(LDMSD_LERROR, SAMP " : out of memory in rdcinfo_new\n");
 		return NULL;
 	}
-<<<<<<< HEAD
-	
-=======
-
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 	pthread_mutex_init(&x->lock, NULL);
 	x->msglog = log;
 	return x;
@@ -417,13 +400,8 @@ void rdcinfo_reset(rdcinfo_inst_t inst)
 	memset(&inst->schema_name_base, 0, sizeof(inst->schema_name_base));
 	memset(&inst->rdc_start, 0 , sizeof(inst->rdc_start));
 	inst->meta_done =
-<<<<<<< HEAD
-		inst->first_index = 
-		inst->metric_offset = 
-=======
 		inst->first_index =
 		inst->metric_offset =
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 		inst->update_freq =
 		inst->max_keep_age =
 		inst->max_keep_samples = 0;
@@ -588,30 +566,17 @@ int rdcinfo_config(rdcinfo_inst_t inst, struct attr_value_list *avl)
 
 	char *sbase = av_value(avl, "schema");
 	if (!sbase) {
-<<<<<<< HEAD
 		strcpy(inst->schema_name_base, SAMP);
 	} else {
-=======
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 		if (!strlen(sbase)) {
 			INST_LOG(inst, LDMSD_LERROR, "empty schema= given. Try again\n");
 			return EINVAL;
 		}
-<<<<<<< HEAD
-		if (strlen(sbase) >= MAX_SCHEMA_BASE) {
-			INST_LOG(inst, LDMSD_LERROR, " schema name > %d long: %s\n",
-				MAX_SCHEMA_BASE, sbase);
-				rc = EINVAL;
-				return rc;
-=======
-		strcpy(inst->schema_name_base, SAMP);
-	} else {
 		if (strlen(sbase) >= MAX_SCHEMA_BASE) {
 		INST_LOG(inst, LDMSD_LERROR, " schema name > %d long: %s\n",
 			MAX_SCHEMA_BASE, sbase);
 			rc = EINVAL;
 			return rc;
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 		}
 		strcpy(inst->schema_name_base, sbase);
 	}
@@ -646,11 +611,7 @@ int rdcinfo_config(rdcinfo_inst_t inst, struct attr_value_list *avl)
 				INST_LOG(inst, LDMSD_LDEBUG, "field %d:%s.\n", cur_field_id, tkn);
 				inst->field_ids[inst->num_fields++] = cur_field_id;
 			} else {
-<<<<<<< HEAD
-				INST_LOG(inst, LDMSD_LERROR, "Unsupported field %d: %s in metrics=.\n", 
-=======
 				INST_LOG(inst, LDMSD_LERROR, "Unsupported field %d: %s in metrics=.\n",
->>>>>>> 0ebbe0d636b5ad94e224dfddcdce98b0a120438f
 					inst->num_fields, tkn);
 				rc = ENOTSUP;
 				goto out_metrics;
