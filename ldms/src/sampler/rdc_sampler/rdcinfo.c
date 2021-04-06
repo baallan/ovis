@@ -804,3 +804,4 @@ rdc_status_t rdc_group_field_get_info(rdc_handle_t p_rdc_handle, rdc_field_grp_t
 rdc_status_t rdc_field_watch(rdc_handle_t p_rdc_handle, rdc_gpu_group_t group_id, rdc_field_grp_t field_group_id, uint64_t update_freq, double max_keep_age, uint32_t max_keep_samples) { return 1; }
 const char* rdc_status_string(rdc_status_t status) { return ""; }
 #endif
+#endif
