@@ -104,6 +104,11 @@ static int sample(struct ldmsd_sampler *self)
 		return EINVAL;
 	pthread_mutex_lock(&inst->lock);
 	int rc = rdcinfo_sample(inst);
+	if (rc) {
+		/* must stop the noisy loop inside the rdc library */
+		rdcinfo_reset(inst);
+		INST_LOG(inst, LDMSD_LWARNING, SAMP ": deconfigured.\n");
+	}
 	pthread_mutex_unlock(&inst->lock);
 	return rc;
 }
@@ -160,3 +165,8 @@ struct ldmsd_plugin *get_plugin(ldmsd_msg_log_f pf)
 	return &plugin.base;
 }
 
+static void __attribute__ ((destructor)) rdc_plugin_fini(void);
+static void rdc_plugin_fini()
+{
+	term();
+}

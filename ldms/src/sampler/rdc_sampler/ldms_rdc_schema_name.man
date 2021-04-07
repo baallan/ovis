@@ -6,6 +6,7 @@
 ldms_rdc_schema_name - man page for the LDMS rdc_sampler plugin support utility
 
 .SH SYNOPSIS
+ldms_rdc_schema_name -h
 ldms_rdc_schema_name <plugin config options>
 
 .SH DESCRIPTION
@@ -20,11 +21,14 @@ See Plugin_rdc_sampler(7).
 .SH EXAMPLES
 .PP
 .nf
-ldms_rdc_schema_name metrics=FIXME schema=myrdc_sampler shape=0 | grep -v ERROR
-myrdc_sampler_%d_%X
+#ldms_rdc_schema_name -h
+<dump of the usage details from the plugin.>
 
-ldms_rdc_schema_name metrics=FIXME shape=1
-rdc_sampler_%X
+# ldms_rdc_schema_name metrics=base schema=myrdc_sampler shape=0 | grep -v ERROR
+myrdc_sampler_2_51dcba58
+
+# ldms_rdc_schema_name metrics=xgmi shape=1
+rdc_sampler_device_e3e41d59
 .fi
 
 .SH NOTES

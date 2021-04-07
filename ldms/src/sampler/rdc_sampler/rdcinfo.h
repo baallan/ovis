@@ -90,6 +90,7 @@ struct rdcinfo_inst_s {
 	ldms_set_t devset[RDC_MAX_NUM_DEVICES];
 	uint32_t num_sets;
 	uint32_t num_fields;
+	uint32_t warmup;
 	uint32_t update_freq;
 	uint32_t max_keep_age;
 	uint32_t max_keep_samples;

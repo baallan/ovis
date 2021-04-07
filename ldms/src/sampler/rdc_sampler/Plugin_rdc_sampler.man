@@ -66,6 +66,10 @@ An argument passed to rdc_field_watch.
 max_keep_samples=N
 .br
 An argument passed to rdc_field_watch.
+.TP
+warmup=K
+.br
+Delay K cycles update_freq long before attempting to read data from the gpu.
 .RE
 
 .SH EXAMPLES

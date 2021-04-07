@@ -65,7 +65,7 @@
 #include "coll/fnv_hash.h"
 
 /* the default array applies to vega20+ hardware. */
-static rdc_field_t default_field_ids_20[] = {
+static rdc_field_t default_field_ids[] = {
 	RDC_FI_GPU_CLOCK,
 	RDC_FI_MEM_CLOCK,
 	RDC_FI_MEMORY_TEMP,
@@ -77,15 +77,15 @@ static rdc_field_t default_field_ids_20[] = {
 	RDC_FI_GPU_MEMORY_USAGE,
 	RDC_FI_GPU_MEMORY_TOTAL,
 	RDC_FI_ECC_CORRECT_TOTAL,
-	RDC_FI_ECC_UNCORRECT_TOTAL,
-	RDC_EVNT_XGMI_0_THRPUT,
-	RDC_EVNT_XGMI_1_THRPUT
+	RDC_FI_ECC_UNCORRECT_TOTAL
 };
 
-static const uint32_t num_fields_default_20 = sizeof(default_field_ids_20)/sizeof(default_field_ids_20[0]);
+static const uint32_t num_fields_default = sizeof(default_field_ids)/sizeof(default_field_ids[0]);
 
-/* expansion for metrics=v10 option */
-const char *default_metrics_10 =
+#if 0
+/* expansion for metrics=base option */
+static
+char const *default_metrics_base =
 	"RDC_FI_GPU_CLOCK,"
 	"RDC_FI_MEM_CLOCK,"
 	"RDC_FI_MEMORY_TEMP,"
@@ -99,8 +99,9 @@ const char *default_metrics_10 =
 	"RDC_FI_ECC_CORRECT_TOTAL,"
 	"RDC_FI_ECC_UNCORRECT_TOTAL";
 
-/* expansion for metrics=v20 option */
-const char *default_metrics_20 =
+/* expansion for metrics=xgmi option */
+static
+char *default_metrics_xgmi =
 	"RDC_FI_GPU_CLOCK,"
 	"RDC_FI_MEM_CLOCK,"
 	"RDC_FI_MEMORY_TEMP,"
@@ -115,6 +116,44 @@ const char *default_metrics_20 =
 	"RDC_FI_ECC_UNCORRECT_TOTAL,"
 	"RDC_EVNT_XGMI_0_THRPUT,"
 	"RDC_EVNT_XGMI_1_THRPUT";
+#endif
+
+struct defset {
+	const char *name; /*< abbreviation for use as metrics=abbr */
+	const char *metrics; /*< expansion of the abbreviation */
+};
+
+struct defset defs[] = {
+	{ "base", "RDC_FI_GPU_CLOCK,"
+		"RDC_FI_MEM_CLOCK,"
+		"RDC_FI_MEMORY_TEMP,"
+		"RDC_FI_GPU_TEMP,"
+		"RDC_FI_POWER_USAGE,"
+		"RDC_FI_PCIE_TX,"
+		"RDC_FI_PCIE_RX,"
+		"RDC_FI_GPU_UTIL,"
+		"RDC_FI_GPU_MEMORY_USAGE,"
+		"RDC_FI_GPU_MEMORY_TOTAL,"
+		"RDC_FI_ECC_CORRECT_TOTAL,"
+		"RDC_FI_ECC_UNCORRECT_TOTAL"
+	},
+	{ "xgmi", "RDC_FI_GPU_CLOCK,"
+		"RDC_FI_MEM_CLOCK,"
+		"RDC_FI_MEMORY_TEMP,"
+		"RDC_FI_GPU_TEMP,"
+		"RDC_FI_POWER_USAGE,"
+		"RDC_FI_PCIE_TX,"
+		"RDC_FI_PCIE_RX,"
+		"RDC_FI_GPU_UTIL,"
+		"RDC_FI_GPU_MEMORY_USAGE,"
+		"RDC_FI_GPU_MEMORY_TOTAL,"
+		"RDC_FI_ECC_CORRECT_TOTAL,"
+		"RDC_FI_ECC_UNCORRECT_TOTAL,"
+		"RDC_EVNT_XGMI_0_THRPUT,"
+		"RDC_EVNT_XGMI_1_THRPUT"
+	}
+};
+static size_t num_defs = sizeof(defs)/sizeof(defs[0]);
 
 /* FUNCTIONS */
 
@@ -171,7 +210,7 @@ int rdcinfo_update_schema(rdcinfo_inst_t inst, ldms_schema_t schema)
 				snprintf(name, sizeof(name), "gpu%d:%s",
 					inst->group_info.entity_ids[gindex],
 					field_id_string(inst->field_info.field_ids[findex]));
-				rc = ldms_schema_metric_add(schema, name, LDMS_V_U64
+				rc = ldms_schema_metric_add(schema, name, LDMS_V_S64
 			#if SCHEMA_HAVE_UNITS
 					, field_id_unit(inst->field_info.field_ids[findex])
 			#endif
@@ -190,7 +229,7 @@ int rdcinfo_update_schema(rdcinfo_inst_t inst, ldms_schema_t schema)
 			return -rc;
 		for (findex = 0; findex < inst->field_info.count; findex++) {
 			fname = field_id_string(inst->field_info.field_ids[findex]);
-			rc = ldms_schema_metric_add(schema, fname, LDMS_V_U64
+			rc = ldms_schema_metric_add(schema, fname, LDMS_V_S64
 		#if SCHEMA_HAVE_UNITS
 				, field_id_unit(inst->field_info.field_ids[findex])
 		#endif
@@ -226,10 +265,11 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC_RAW, &now);
 	uint64_t tdiff = difftimespec_us(&inst->rdc_start, &now);
-	if ( tdiff < 2 * inst->update_freq) {
+	if ( tdiff < inst->warmup * inst->update_freq) {
 		return 0;
 	}
 
+	int rc = 0;
 	uint32_t gindex, findex;
 	switch (inst->shape) {
 	case SS_WIDE:
@@ -238,16 +278,26 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 		for (gindex = 0; gindex < inst->group_info.count; gindex++) {
 			for (findex = 0; findex < inst->field_info.count; findex++, i++) {
 				rdc_field_value value;
+				value.value.l_int = 0;
 				result = rdc_field_get_latest_value(inst->rdc_handle,
 						inst->group_info.entity_ids[gindex],
 						inst->field_info.field_ids[findex],
 						&value);
 				if (result != RDC_ST_OK) {
 					INST_LOG(inst, LDMSD_LWARNING,
-						"Failed to get (gpu %d: field: %s): %s\n",
+						"Stopping sampler. Fix the configuration to match hardware"
+						" capability or extend warmup. Failed to get (gpu %d: field: %s): %s\n",
 						inst->group_info.entity_ids[gindex],
 						field_id_string(inst->field_info.field_ids[findex]),
 						rdc_status_string(result));
+					rc = EINVAL;
+				}
+				if (value.type != INTEGER) {
+					INST_LOG(inst, LDMSD_LWARNING,
+						"Stopping sampler. Fix configuration: only integer metrics are allowed."
+						"Not field: %s)\n",
+						field_id_string(inst->field_info.field_ids[findex]));
+					rc = EINVAL;
 					continue;
 				}
 				ldms_metric_set_u64(inst->devset[0],
@@ -271,16 +321,27 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 			}
 			for (findex = 0; findex < inst->field_info.count; findex++, i++) {
 				rdc_field_value value;
+				value.value.l_int = 0;
 				result = rdc_field_get_latest_value(inst->rdc_handle,
 						inst->group_info.entity_ids[gindex],
 						inst->field_info.field_ids[findex],
 						&value);
 				if (result != RDC_ST_OK) {
 					INST_LOG(inst, LDMSD_LWARNING,
-						"Failed to get (gpu %d: field: %s): %s\n",
+						"Stopping sampler. Fix the configuration to match hardware"
+						" capability or extend warmup. Failed to get (gpu %d: field: %s): %s\n",
 						inst->group_info.entity_ids[gindex],
 						field_id_string(inst->field_info.field_ids[findex]),
 						rdc_status_string(result));
+					rc = EINVAL;
+					continue;
+				}
+				if (value.type != INTEGER) {
+					INST_LOG(inst, LDMSD_LWARNING,
+						"Stopping sampler. Fix configuration: only integer metrics are allowed."
+						"Not field: %s)\n",
+						field_id_string(inst->field_info.field_ids[findex]));
+					rc = EINVAL;
 					continue;
 				}
 				ldms_metric_set_u64(inst->devset[gindex],
@@ -294,10 +355,10 @@ int rdcinfo_sample(rdcinfo_inst_t inst)
 	default:
 		INST_LOG(inst, LDMSD_LERROR, "Unsupported shape=%" PRIu32 ".\n",
 			inst->shape);
-		return EINVAL;
+		rc = EINVAL;
 	}
 
-	return 0;
+	return rc;
 }
 
 #endif
@@ -309,8 +370,13 @@ SAMP " config synopsis:\n"
 "Option descriptions:\n"
 "    metrics   The comma-separated list of metrics to monitor.\n"
 "              See rdc_field_t in <rdc/rdc.h> for possible field names.\n"
-"              Additionally, special values 'v10' and 'v20' adjust the default set.\n"
+"              Additionally, special values adjust the default set (see below).\n"
 "              Only integer fields are supported by the sampler.\n"
+"    warmup=K  Wait K update_freq cycles before trying to read from gpu.\n"
+"              If warmup is too short, the sampler may stop because a metric appears to be unsupported.\n"
+"    update_freq=US   microsecond interval passed to rdc_field_watch.\n"
+"    max_keep_age=S   second duration passed to rdc_field_watch.\n"
+"    max_keep_samples=N length of history passed to rdc_field_watch.\n"
 "    shape=SHAPE  Number indicating set layout to use (default: 0):\n"
 "                 0: one wide set, with metrics prefixed by \"gpu%d:\"\n"
 "                 1: one set per gpu.\n"
@@ -327,17 +393,18 @@ char *rdcinfo_usage()
 	dstr_init2(&ds, 2048);
 	dstrcat(&ds, _help, DSTRING_ALL);
 	int i = 0;
-	for ( ; i < num_fields_default_20; i++) {
+	for ( ; i < num_fields_default; i++) {
 		dstrcat(&ds, "    ", 4);
-		dstrcat(&ds, field_id_string(default_field_ids_20[i]), DSTRING_ALL);
+		dstrcat(&ds, field_id_string(default_field_ids[i]), DSTRING_ALL);
 		dstrcat(&ds, "\n", 1);
 	}
-	dstrcat(&ds, "The v10 metric set is:\n", DSTRING_ALL);
-	dstrcat(&ds, default_metrics_10, DSTRING_ALL);
-	dstrcat(&ds, "\n", 1);
-	dstrcat(&ds, "The v20 metric set is:\n", DSTRING_ALL);
-	dstrcat(&ds, default_metrics_20, DSTRING_ALL);
-	dstrcat(&ds, "\n", 1);
+	for (i = 0; i < num_defs; i++) {
+		dstrcat(&ds, "The '", DSTRING_ALL);
+		dstrcat(&ds, defs[i].name, DSTRING_ALL);
+		dstrcat(&ds, "' metric set is:\n", DSTRING_ALL);
+		dstrcat(&ds, defs[i].metrics, DSTRING_ALL);
+		dstrcat(&ds, "\n", 1);
+	}
 	char *r = dstr_extract(&ds);
 	return r;
 }
@@ -396,6 +463,7 @@ void rdcinfo_reset(rdcinfo_inst_t inst)
 				ldmsd_set_deregister(tmp, inst->base->pi_name);
 				ldms_set_unpublish(set);
 				ldms_set_delete(set);
+				inst->devset[i] = NULL;
 			}
 		}
 		if (inst->base) {
@@ -410,6 +478,7 @@ void rdcinfo_reset(rdcinfo_inst_t inst)
 		if (set) {
 			ldms_set_unpublish(set);
 			ldms_set_delete(set);
+			inst->devset[0] = NULL;
 		}
 	}
 	inst->base = NULL;
@@ -581,6 +650,7 @@ static const char *rdc_opts[] = {
         "perm",
         "job_set",
         "metrics",
+	"warmup",
 	"shape",
 	"update_freq",
 	"max_keep_age",
@@ -626,18 +696,24 @@ int rdcinfo_config(rdcinfo_inst_t inst, struct attr_value_list *avl)
 	const char *metrics = av_value(avl, "metrics");
 	uint32_t i;
 	if (!metrics) {
-		/* default to all metrics in default_field_ids_20 */
-		for (i = 0; i < num_fields_default_20; i++)
-			inst->field_ids[i] = default_field_ids_20[i];
-		inst->num_fields = num_fields_default_20;
+		/* default to all metrics in default_field_ids */
+		for (i = 0; i < num_fields_default; i++)
+			inst->field_ids[i] = default_field_ids[i];
+		inst->num_fields = num_fields_default;
 	} else {
 		char *tkn, *ptr;
 		INST_LOG(inst, LDMSD_LDEBUG, "metrics=%s.\n", metrics);
-		if (strcmp("v10",metrics) == 0)
-			mt = strdup(default_metrics_10);
-		else if (strcmp("v20",metrics) == 0)
-			mt = strdup(default_metrics_20);
-		else
+		for (i = 0; i < num_defs; i++) {
+			if (strcmp(defs[i].name, metrics) == 0) {
+				mt = strdup(defs[i].metrics);
+				if (!mt) {
+					INST_LOG(inst, LDMSD_LERROR, "out of memory parsing metrics=\n");
+					return ENOMEM;
+				}
+				break;
+			}
+		}
+		if (!mt)
 			mt = strdup(metrics);
 		if (!mt) {
 			INST_LOG(inst, LDMSD_LERROR, "out of memory parsing metrics=\n");
@@ -686,6 +762,10 @@ int rdcinfo_config(rdcinfo_inst_t inst, struct attr_value_list *avl)
 				shape);
 			return EINVAL;
 		}
+
+	rc = rdcinfo_config_find_int_value(inst, avl, "warmup", 4, &inst->warmup);
+	if (rc)
+		return rc;
 
 	rc = rdcinfo_config_find_int_value(inst, avl, "update_freq", 1000000, &inst->update_freq);
 	if (rc)
