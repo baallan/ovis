@@ -85,7 +85,7 @@ static rdc_field_t default_field_ids_20[] = {
 static const uint32_t num_fields_default_20 = sizeof(default_field_ids_20)/sizeof(default_field_ids_20[0]);
 
 /* expansion for metrics=v10 option */
-const char *default_metrics_10 = 
+const char *default_metrics_10 =
 	"RDC_FI_GPU_CLOCK,"
 	"RDC_FI_MEM_CLOCK,"
 	"RDC_FI_MEMORY_TEMP,"
@@ -100,7 +100,7 @@ const char *default_metrics_10 =
 	"RDC_FI_ECC_UNCORRECT_TOTAL";
 
 /* expansion for metrics=v20 option */
-const char *default_metrics_20 = 
+const char *default_metrics_20 =
 	"RDC_FI_GPU_CLOCK,"
 	"RDC_FI_MEM_CLOCK,"
 	"RDC_FI_MEMORY_TEMP,"
