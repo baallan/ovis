@@ -123,13 +123,31 @@ OPTION_DEFAULT_ENABLE([ovis_ctrl], [ENABLE_OVIS_CTRL])
 OPTION_DEFAULT_ENABLE([ovis_util], [ENABLE_OVIS_UTIL])
 OPTION_DEFAULT_ENABLE([ovis_auth], [ENABLE_OVIS_AUTH])
 OPTION_DEFAULT_ENABLE([zap], [ENABLE_ZAP])
-OPTION_DEFAULT_DISABLE([rdc], [ENABLE_RDC])
 OPTION_DEFAULT_DISABLE([rdma], [ENABLE_RDMA])
 OPTION_DEFAULT_DISABLE([nola], [ENABLE_NOLA])
 OPTION_DEFAULT_DISABLE([fabric], [ENABLE_FABRIC])
 OPTION_DEFAULT_DISABLE([ugni], [ENABLE_UGNI])
 dnl dnl OPTION_DEFAULT_DISABLE([sos], [ENABLE_SOS])
 dnl dnl OPTION_WITH_OR_BUILD([sos],[../sos],[sos/src sos/include ods/src ods/include])
+
+dnl RDC defaults to no instead of search because amd currently recommends
+dnl multiple non-default path installations (/opt).
+AC_ARG_ENABLE([rdc],
+	[AS_HELP_STRING([--enable-rdc], [attempt components that depend upon AMD rdc tooling @<:@default=no@:>@ for GPUs. Set RDC_CFLAGS=-I$rdcinclude and RDC_LIBS=-L$rdclibdir])],
+	[],
+	[enable_rdc="no"])
+if test "$enable_rdc" != "no"; then
+    m4_ifndef([PKG_CHECK_MODULES],
+              [m4_fatal([pkg.m4 not found. Please install pkg-config (Ubuntu) or pkgconfig (RHEL) package])])
+    PKG_CHECK_MODULES([RDC], [rdc],
+		      [AC_DEFINE([HAVE_RDC],[1],[if AMD rdc module present.])],
+		      AC_MSG_ERROR([pkg-config rdc failed])
+		      )
+    AC_MSG_RESULT([rdc include: $RDC_CFLAGS])
+    AC_MSG_RESULT([rdc lib: $RDC_LIBS])
+    HAVE_RDC=yes
+fi
+AM_CONDITIONAL([ENABLE_RDC], [test "x$HAVE_RDC" = xyes])
 
 have_zap=0
 
