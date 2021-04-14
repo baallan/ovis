@@ -238,7 +238,8 @@ static int build_port_list(char *port_list)
 					port_number);
 				if (rc) {
 					msglog(LDMSD_LERROR, SAMP
-						": create_hfi_port error %s\n",
+						": create_hfi_port %s:%d error %s\n",
+						all_hfis[i].ca_name, port_number,
 						STRERROR(rc));
 
 				}
@@ -272,7 +273,8 @@ static int build_port_list(char *port_list)
 				create_hfi_port(&(all_hfis[i]), port_number);
 				if (rc) {
 					msglog(LDMSD_LERROR, SAMP
-						": create_hfi_port error %s\n",
+						": create_hfi_port %s:%d error %s\n",
+						all_hfis[i].ca_name, port_number,
 						STRERROR(rc));
 
 				}
