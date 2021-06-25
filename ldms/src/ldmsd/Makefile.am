@@ -37,6 +37,10 @@ lib_LTLIBRARIES += libldmsd_stream.la
 libldmsd_stream_la_SOURCES = ldmsd_stream.c ldmsd_stream.h ldmsd_request_util.c
 libldmsd_stream_la_LIBADD = ../core/libldms.la
 
+lib_LTLIBRARIES += libldms_sps.la
+libldms_sps_la_SOURCES = ldms_sps.c ldms_sps.h
+libldms_sps_la_LIBADD = libldmsd_stream.la ../core/libldms.la $(LOVIS_UTIL) $(LJSON_UTIL)
+
 lib_LTLIBRARIES += libldmsd_request.la
 libldmsd_request_la_SOURCES = ldmsd_request_util.c
 libldmsd_request_la_LIBADD = ../core/libldms.la
