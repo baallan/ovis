@@ -322,6 +322,7 @@ extern int64_t json_value_int(json_entity_t e);
 extern int json_value_bool(json_entity_t e);
 extern double json_value_float(json_entity_t e);
 extern json_str_t json_value_str(json_entity_t e);
+extern const char *json_value_str_str(json_entity_t e);
 extern json_dict_t json_value_dict(json_entity_t e);
 extern json_list_t json_value_list(json_entity_t e);
 
