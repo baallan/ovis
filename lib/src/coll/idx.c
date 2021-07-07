@@ -344,7 +344,7 @@ int main(int argc, char *argv[])
 	srandom(seed);
 	for (i = 0; i < 100; i++) {
 		long k = random();
-		sprintf(key, "%d", k);
+		sprintf(key, "%ld", k);
 		keylen = strlen(key);
 		obj = strdup(key);
 		rc = idx_add(idx, (idx_key_t)key, keylen, obj);
@@ -359,7 +359,7 @@ int main(int argc, char *argv[])
 	srandom(seed);
 	for (i = 0; i < 100; i++) {
 		long k = random();
-		sprintf(key, "%d", k);
+		sprintf(key, "%ld", k);
 		keylen = strlen(key);
 		obj = idx_find(idx, (idx_key_t)key, keylen);
 		TEST_ASSERT(obj != NULL,
@@ -376,7 +376,7 @@ int main(int argc, char *argv[])
 	srandom(seed);
 	for (i = 0; i < 100; i++) {
 		long k = random();
-		sprintf(key, "%d", k);
+		sprintf(key, "%ld", k);
 		keylen = strlen(key);
 		obj = idx_delete(idx, (idx_key_t)key, keylen);
 		TEST_ASSERT(obj != NULL,

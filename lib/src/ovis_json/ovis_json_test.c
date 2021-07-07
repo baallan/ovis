@@ -75,12 +75,34 @@ int main(int argc, char *argv[])
 	json_entity_t entity;
 	json_parser_t parser = json_parser_new(0);
 	int rc = fread(buffer, 1, sizeof(buffer), fp);
+	fclose(fp);
 	rc = json_parse_buffer(parser, buffer, rc, &entity);
+	jbuf_t jb= NULL;
+	if (rc == 0) {
+		jb = json_entity_dump(jb, entity);
+		printf("%s\n", jb->buf);
+		jbuf_free(jb);
+		jb = NULL;
+		json_entity_t data = json_value_find(entity, "data");
+		if (data) {
+			jb = json_entity_dump(jb, data);
+			printf("%s\n", jb->buf);
+			jbuf_free(jb);
+			jb = NULL;
+			json_entity_t job_id = json_value_find(data, "job_id");
+			jb = json_entity_dump(jb, job_id);
+			printf("%s\n", jb->buf);
+			jbuf_free(jb);
+			jb = NULL;
+		}
+	}
 #if 0
-	if (rc == 0)
-		jb = print_entity(jb, entity);
-	printf("%s\n", jb->buf);
-	jbuf_free(jb);
+	jb = jbuf_new();
+	if (rc == 0) {
+		xb = print_entity(xb, entity);
+		printf("%s\n", xb->buf);
+	}
+	jbuf_free(xb);
 	jb = jbuf_new();
 	json_entity_t kernel_data = json_attr_find(entity, "kokkos-kernel-data");
 	if (kernel_data) {
