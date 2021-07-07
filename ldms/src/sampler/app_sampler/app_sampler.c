@@ -661,9 +661,19 @@ static int stat_handler(app_sampler_inst_t inst, pid_t pid, ldms_set_t set)
 	f = fopen(buff, "r");
 	if (!f)
 		return errno;
-	fgets(buff, sizeof(buff), f);
+	char *s;
+	errno = 0;
+	s = fgets(buff, sizeof(buff), f);
 	fclose(f);
 	str = buff;
+	if (s != buff) {
+		if (errno) {
+			INST_LOG(inst, LDMSD_LERROR,
+				"error reading /proc/%d/stat %s\n", pid, STRERROR(errno));
+			return errno;
+		}
+		return EINVAL;
+	}
 	n = sscanf(str, "%d (%[^)]) %c%n", &_pid, name, &state, &off);
 	if (n != 3)
 		return EINVAL;
