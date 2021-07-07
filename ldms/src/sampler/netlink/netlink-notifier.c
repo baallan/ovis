@@ -206,7 +206,8 @@ typedef struct proc_info {
 	uid_t	uid;		/* User ID */
 	gid_t	gid;		/* GUID */
 	uid_t	euid;		/* EUID */
-	struct timeval start;	/* time when process started */
+	struct timeval start;	/* epoch time when process started */
+	uint64_t start_tick;	/* local tick when process started */
 	bool	kernel_thread;	/* true if a kernel thread */
 	char	*exe;		/* /proc/pid/exe link content */
 	int64_t serno;
@@ -318,7 +319,7 @@ static pthread_mutex_t serial_lock = PTHREAD_MUTEX_INITIALIZER;
 
 #define THREADED 1
 #define UNTHREADED 1
-static proc_info_t *proc_info_add(const pid_t pid, const struct timeval * const tv, int threaded, forkstat_t *ft);
+static proc_info_t *proc_info_add(const pid_t pid, const struct timeval * const tv, int threaded, forkstat_t *ft, uint64_t tick);
 
 /* Default void no process info struct */
 static proc_info_t no_info = {
@@ -1133,7 +1134,7 @@ static inline double timeval_to_double(const struct timeval * const tv)
  *   proc_info_get_timeval()
  *	get time when process started
  */
-static void proc_info_get_timeval(const pid_t pid, struct timeval * const tv)
+static void proc_info_get_timeval(const pid_t pid, struct timeval * const tv, uint64_t *start_tick)
 {
 	int fd;
 	unsigned long long starttime = 0;
@@ -1181,6 +1182,7 @@ static void proc_info_get_timeval(const pid_t pid, struct timeval * const tv)
 	n = sscanf(ptr, "%llu", &starttime);
 	if (n != 1)
 		return;
+	*start_tick = starttime;
 
 	errno = 0;
 	jiffies = sysconf(_SC_CLK_TCK);
@@ -1433,8 +1435,9 @@ static proc_info_t *proc_info_get(const pid_t pid, forkstat_t *ft)
 
 	/* Hrm, not already cached, so get new info */
 	(void)memset(&tv, 0, sizeof(tv));
-	proc_info_get_timeval(pid, &tv);
-	info = proc_info_add(pid, &tv, THREADED, ft);
+	uint64_t tick = 0;
+	proc_info_get_timeval(pid, &tv, &tick);
+	info = proc_info_add(pid, &tv, THREADED, ft, tick);
 	if (!info)
 		info = &no_info;
 
@@ -1566,8 +1569,8 @@ out2:
 #endif
 
 /* local serial number (non-unique) with more bits than a pid.
- * It should be unlikely that $host/$job_id/$proc_start_sec/$serno will collide
- * compared to $host/$job/$proc_start_sec/$pid.
+ * It is unlikely that $host/$jobid/$proc_start_sec.usec/$pid will collide.
+ * If we discover a many-core case where it can, use serno instead of pid.
  */
 static int64_t serno;
 static int64_t procinfo_get_serial();
@@ -1577,7 +1580,7 @@ static uint64_t forkstat_get_serial(forkstat_t *ft);
  *   proc_info_add()
  *	add processes info of a given pid to the hash table
  */
-static proc_info_t *proc_info_add(const pid_t pid, const struct timeval * const tv, int threaded, forkstat_t *ft)
+static proc_info_t *proc_info_add(const pid_t pid, const struct timeval * const tv, int threaded, forkstat_t *ft, uint64_t tick)
 {
 	if (ft->opt_trace)
 		PRINTF("proc_info_add %d\n", pid);
@@ -1612,9 +1615,6 @@ static proc_info_t *proc_info_add(const pid_t pid, const struct timeval * const 
 	}
 
 	if (!info) {
-		serno++;
-		if (serno < 0)
-			serno = 0;
 		info = calloc(1, sizeof(proc_info_t));
 		if (!info) {
 			EPRINTF("Cannot allocate all proc info\n");
@@ -1637,6 +1637,7 @@ static proc_info_t *proc_info_add(const pid_t pid, const struct timeval * const 
 	info->kernel_thread = pid_a_kernel_thread(cmdline, pid, ft);
 	set_excludes(info, ft->opt_trace, ft->opt_uidmin);
 	info->start = *tv;
+	info->start_tick = tick;
 	if (threaded) {
 		LPRINTF("%s:%d: unlocking %zu\n", __func__ ,__LINE__, i);
 		pthread_mutex_unlock(&(ft->proc_info[i].lock));
@@ -1671,8 +1672,9 @@ static void proc_thread_info_add(const pid_t pid, const struct timeval *const pa
 			tpid = (pid_t)strtol(dirent->d_name, NULL, 10);
 			if ((!errno) && (tpid != pid)) {
 				tv = *parent_tv;
-				proc_info_get_timeval(pid, &tv);
-				(void)proc_info_add(tpid, &tv, threaded, ft);
+				uint64_t tick = 0;
+				proc_info_get_timeval(pid, &tv, &tick);
+				(void)proc_info_add(tpid, &tv, threaded, ft, tick);
 			}
 		}
 	}
@@ -1708,8 +1710,9 @@ static int proc_info_load(forkstat_t *ft)
 			pid = (pid_t)strtol(dirent->d_name, NULL, 10);
 			if (!errno) {
 				(void)memset(&tv, 0, sizeof(tv));
-				proc_info_get_timeval(pid, &tv);
-				(void)proc_info_add(pid, &tv, UNTHREADED, ft);
+				uint64_t tick = 0;
+				proc_info_get_timeval(pid, &tv, &tick);
+				(void)proc_info_add(pid, &tv, UNTHREADED, ft, tick);
 				proc_thread_info_add(pid, &tv, UNTHREADED, ft);
 			}
 		}
@@ -1911,6 +1914,7 @@ static void *monitor(void *vp)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,14)
 			struct timeval tv;
+			struct timeval starttv;
 			char duration[32];
 			proc_info_t *info1, *info2;
 #endif
@@ -1947,8 +1951,11 @@ static void *monitor(void *vp)
 				pid = proc_ev->event_data.fork.child_pid;
 				if (gettimeofday(&tv, NULL) < 0)
 					(void)memset(&tv, 0, sizeof tv);
+				(void)memset(&starttv, 0, sizeof starttv);
+				uint64_t tick = 0;
+				proc_info_get_timeval(pid, &starttv, &tick);
 				info1 = proc_info_get(ppid, ft);
-				info2 = proc_info_add(pid, &tv, THREADED, ft);
+				info2 = proc_info_add(pid, &tv, THREADED, ft, tick);
 				proc_info_release(ppid, ft);
 				if (!(ft->opt_flags & OPT_QUIET) &&
 					(((ft->opt_flags & OPT_EV_FORK) && !is_thread) ||
@@ -2782,12 +2789,14 @@ static jbuf_t make_process_start_data_linux(forkstat_t *ft, const struct proc_in
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "start", "\"%lu.%06lu\",", info->start.tv_sec, info->start.tv_usec );
+	jb = jbuf_append_attr(jb, "start_tick", "\"%" PRIu64 "\",", info->start_tick );
 	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ? info->jobid : "0" );
 	if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "uid", "%"PRId64",", (int64_t)info->uid); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "gid", "%"PRId64",", (int64_t)info->gid); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_pid", "%d,", (int)info->pid); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "task_global_id", "-1,"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "is_thread", "%d,", (int)info->is_thread); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "exe", "\"%s\"", info->exe); if (!jb) goto out_1;
 	jb = jbuf_append_str(jb, "}}");
@@ -2813,6 +2822,7 @@ static jbuf_t make_process_end_data_linux(forkstat_t *ft, const struct proc_info
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "start", "\"%lu.%06lu\",", info->start.tv_sec, info->start.tv_usec );
+	jb = jbuf_append_attr(jb, "start_tick", "\"%" PRIu64 "\",", info->start_tick );
 	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ? info->jobid : "0" );
 	if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
