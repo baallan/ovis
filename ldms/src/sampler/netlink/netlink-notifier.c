@@ -88,6 +88,9 @@
 #include <sys/queue.h>
 #include "ldms_sps.h"
 
+#define DEBUG_EMITTER 0 
+/* set 1 to trace which path emits the message by adding emitter field to messages */
+
 /* provide thread-safe io macros */
 //#define debug_err_lock 1
 #ifdef debug_err_lock
@@ -2776,7 +2779,11 @@ static jbuf_t add_msg_serial(forkstat_t *ft, jbuf_t jb)
 	return jb;
 }
 
-static jbuf_t make_process_start_data_linux(forkstat_t *ft, const struct proc_info *info)
+static jbuf_t make_process_start_data_linux(forkstat_t *ft, const struct proc_info *info
+#if DEBUG_EMITTER
+, const char *type
+#endif
+)
 {
 	(void)ft;
 	jbuf_t jb, jbd;
@@ -2786,9 +2793,13 @@ static jbuf_t make_process_start_data_linux(forkstat_t *ft, const struct proc_in
 	jb = jbuf_append_attr(jb, "schema", "\"linux_task_data\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "event", "\"task_init_priv\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "timestamp", "%d,", time(NULL)); if (!jb) goto out_1;
+#if DEBUG_EMITTER
+	jb = jbuf_append_attr(jb, "emitter", "\"%s\",", type); if (!jb) goto out_1;
+#endif
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "start", "\"%lu.%06lu\",", info->start.tv_sec, info->start.tv_usec );
+	/* format start_tick as string because u64 is out of ovis_json signed int range */
 	jb = jbuf_append_attr(jb, "start_tick", "\"%" PRIu64 "\",", info->start_tick );
 	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ? info->jobid : "0" );
 	if (!jb) goto out_1;
@@ -2892,7 +2903,11 @@ static jbuf_t make_process_end_data_lsf(forkstat_t *ft, const struct proc_info *
 	return jb;
 }
 
-static jbuf_t make_process_start_data_slurm(forkstat_t *ft, const struct proc_info *info)
+static jbuf_t make_process_start_data_slurm(forkstat_t *ft, const struct proc_info *info
+#if DEBUG_EMITTER
+, const char *type
+#endif
+)
 {
 	(void)ft;
 	jbuf_t jb, jbd;
@@ -2903,6 +2918,9 @@ static jbuf_t make_process_start_data_slurm(forkstat_t *ft, const struct proc_in
 	jb = jbuf_append_attr(jb, "schema", "\"slurm_task_data\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "event", "\"task_init_priv\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "timestamp", "%d,", time(NULL)); if (!jb) goto out_1;
+#if DEBUG_EMITTER
+	jb = jbuf_append_attr(jb, "emitter", "\"%s\",", type); if (!jb) goto out_1;
+#endif
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ); if (!jb) goto out_1;
@@ -3041,12 +3059,21 @@ static jbuf_t make_ldms_message(forkstat_t *ft, struct proc_info *info, const ch
 			break;
 		}
 	}
+
 	if (emit_event & EMIT_ADD) {
 		switch (info->rm_type) {
 		case RM_NONE:
-			return make_process_start_data_linux(ft, info);
+			return make_process_start_data_linux(ft, info
+#if DEBUG_EMITTER
+								, type
+#endif
+								);
 		case RM_SLURM:
-			return make_process_start_data_slurm(ft, info);
+			return make_process_start_data_slurm(ft, info
+#if DEBUG_EMITTER
+								, type
+#endif
+								);
 		case RM_LSF:
 			return make_process_start_data_lsf(ft, info);
 		default:
@@ -3089,7 +3116,7 @@ static int emit_info(forkstat_t *ft, struct proc_info *info, const char *type, i
 	pid_t pid = info->pid;
 	if (lock)
 		proc_info_get(pid, ft); // lock the bucket so info doesn't disappear during emit.
-	if (info->exe && strcmp(info->exe, "(nullexe)") != 0) {
+	if (info->exe && strcmp(info->exe, "(nullexe)") != 0 && !info->emitted) {
 		/*
 		PRINTF("SENDING NOTICE for  %d: %s %s (start=%lu.%06lu)\n",
 			pid, type, info->exe, info->start.tv_sec,
