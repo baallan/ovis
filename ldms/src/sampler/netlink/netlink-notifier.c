@@ -2355,6 +2355,7 @@ static void show_help(char *const argv[])
 		"\t\t -i may effectively filter out additional processes.\n"
 		"-j file\t file to log json messages and transmission status.\n"
 		"-l\tforce stdout line buffering.\n"
+		"-L file\tredirect stdout to a log file\n"
 		"-r\trun with real time FIFO scheduler.\n"
 		"-s\tshow short process name in debugging.\n"
 		"-t\tshow debugging trace messages.\n"
