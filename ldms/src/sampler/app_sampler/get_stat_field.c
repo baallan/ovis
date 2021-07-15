@@ -90,6 +90,7 @@ static int get_timeval_from_tick(uint64_t starttime, struct timeval * const tv)
 	tv->tv_usec = (suseconds_t)secs % 1000000;
 	return 0;
 }
+
 void proc_exe_buf(const pid_t pid, char *buffer, size_t buflen)
 {
 	ssize_t ret;
@@ -101,3 +102,61 @@ void proc_exe_buf(const pid_t pid, char *buffer, size_t buflen)
 	else
 		buffer[ret] = '\0';
 }
+
+
+#define GOT_TGID                (0x01)
+#define GOT_PPID                (0x02)
+#define GOT_ALL                 (GOT_TGID | GOT_PPID)
+
+
+/*
+ *  get_parent_pid()
+ *      get parent pid and set is_thread to true if process
+ *      not forked but a newly created thread
+ */
+static pid_t get_parent_pid(const pid_t pid, bool * const is_thread)
+{
+	FILE *fp;
+	pid_t tgid = 0, ppid = 0;
+	unsigned int got = 0;
+	char path[PATH_MAX];
+	char buffer[4096];
+
+	*is_thread = false;
+	(void)snprintf(path, sizeof(path), "/proc/%u/status", pid);
+	fp = fopen(path, "r");
+	if (!fp)
+		return 0;
+
+	while (((got & GOT_ALL) != GOT_ALL) &&
+		(fgets(buffer, sizeof(buffer), fp) != NULL)) {
+		if (!strncmp(buffer, "Tgid:", 5)) {
+			if (sscanf(buffer + 5, "%u", &tgid) == 1) {
+				got |= GOT_TGID;
+			} else {
+				tgid = 0;
+			}
+		}
+		if (!strncmp(buffer, "PPid:", 5)) {
+			if (sscanf(buffer + 5, "%u", &ppid) == 1)
+				got |= GOT_PPID;
+			else
+				ppid = 0;
+		}
+	}
+	(void)fclose(fp);
+
+	if ((got & GOT_ALL) == GOT_ALL) {
+		/*  TGID and PID are not the same if it is a thread */
+		if (tgid != pid) {
+			/* In this case, the parent is the TGID */
+			ppid = tgid;
+			*is_thread = true;
+		}
+	} else {
+		ppid = 0;
+	}
+
+	return ppid;
+}
+
