@@ -412,7 +412,7 @@ linux_proc_sampler_metric_info_t metric_info_idx_by_name[_APP_LAST + 1];
 
 struct set_key {
 	uint64_t start_tick;
-	int64_t task_pid;
+	int64_t os_pid;
 };
 
 struct linux_proc_sampler_set {
@@ -500,20 +500,22 @@ struct linux_proc_sampler_inst_s {
 	int start_time_idx;
 	int start_tick_idx;
 	int exe_idx;
+	int is_thread_idx;
+	int parent_pid_idx;
 	int metric_idx[_APP_LAST+1]; /* 0 means disabled */
 };
 
-static void data_set_key(linux_proc_sampler_inst_t inst, struct linux_proc_sampler_set *as, uint64_t tick, int64_t task_pid)
+static void data_set_key(linux_proc_sampler_inst_t inst, struct linux_proc_sampler_set *as, uint64_t tick, int64_t os_pid)
 {
 	if (!as)
 		return;
-	as->key.task_pid = task_pid;
+	as->key.os_pid = os_pid;
 	as->key.start_tick = tick;
 #ifdef LPDEBUG
 	INST_LOG(inst, LDMSD_LDEBUG,"Creating key at %p: %" PRIu64 " , %" PRId64 "\n",
-		as, tick, task_pid);
+		as, tick, os_pid);
 #endif
-	
+
 }
 
 static int cmdline_handler(linux_proc_sampler_inst_t, pid_t, ldms_set_t);
@@ -531,7 +533,7 @@ static int timing_handler(linux_proc_sampler_inst_t, pid_t, ldms_set_t);
 
 /* mapping metric -> handler */
 struct handler_info handler_info_tbl[] = {
-	[_APP_CMDLINE_FIRST ... _APP_CMDLINE_LAST] = { .fn = cmdline_handler, .fn_name = "cmdline_handler" }, 
+	[_APP_CMDLINE_FIRST ... _APP_CMDLINE_LAST] = { .fn = cmdline_handler, .fn_name = "cmdline_handler" },
 	[APP_N_OPEN_FILES] = { .fn = n_open_files_handler, .fn_name = "n_open_files_handler" },
 	[_APP_IO_FIRST ... _APP_IO_LAST] = { .fn = io_handler, .fn_name= "io_handler" },
 	[APP_OOM_SCORE] = { .fn = oom_score_handler, .fn_name= "oom_score_handler" },
@@ -542,7 +544,7 @@ struct handler_info handler_info_tbl[] = {
 	[APP_SYSCALL] = { .fn = syscall_handler, .fn_name = "syscall_handler" },
 	[APP_TIMERSLACK_NS] = { .fn = timerslack_ns_handler, .fn_name = "timerslack_ns_handler" },
 	[APP_WCHAN] = { .fn = wchan_handler, .fn_name = "wchan_handler" },
-	[APP_TIMING] = { .fn = timing_handler, .fn_name = "timing_handler"} 
+	[APP_TIMING] = { .fn = timing_handler, .fn_name = "timing_handler"}
 };
 
 static inline linux_proc_sampler_metric_info_t find_metric_info_by_name(const char *name);
@@ -1106,7 +1108,7 @@ static int timing_handler(linux_proc_sampler_inst_t inst, pid_t pid, ldms_set_t 
 		x_us += (uint64_t)(1000000 + d_us);
 	else
 		x_us += (uint64_t) d_us;
-	
+
 	ldms_metric_set_u64(set, inst->metric_idx[APP_TIMING], x_us);
 	inst->sample_start.tv_sec = 0;
 	inst->sample_start.tv_usec = 0;
@@ -1131,6 +1133,10 @@ linux_proc_sampler_update_schema(linux_proc_sampler_inst_t inst, ldms_schema_t s
 						LDMS_V_CHAR_ARRAY, 20);
 	inst->start_tick_idx = ldms_schema_meta_add(schema, "start_tick",
 						LDMS_V_U64);
+	inst->is_thread_idx = ldms_schema_meta_add(schema, "is_thread",
+						LDMS_V_U8);
+	inst->parent_pid_idx = ldms_schema_meta_add(schema, "parent",
+						LDMS_V_S64);
 	inst->exe_idx = ldms_schema_meta_array_add(schema, "exe",
 						LDMS_V_CHAR_ARRAY, 512);
 
@@ -1178,7 +1184,7 @@ void app_set_destroy(linux_proc_sampler_inst_t inst, struct linux_proc_sampler_s
 	INST_LOG(inst, LDMSD_LDEBUG, "Removing set %s\n",
 		ldms_set_instance_name_get(a->set));
 	INST_LOG(inst, LDMSD_LDEBUG,"Uncreating key at %p: %" PRIu64 " , %" PRId64 "\n",
-		&a->key, a->key.start_tick, a->key.task_pid);
+		&a->key, a->key.start_tick, a->key.os_pid);
 #else
 	(void)inst;
 #endif
@@ -1186,7 +1192,7 @@ void app_set_destroy(linux_proc_sampler_inst_t inst, struct linux_proc_sampler_s
 	ldms_set_unpublish(a->set);
 	ldms_set_delete(a->set);
 	a->key.start_tick = 0;
-	a->key.task_pid = 0;
+	a->key.os_pid = 0;
 	a->set = NULL;
 	free(a);
 }
@@ -1208,7 +1214,7 @@ static int linux_proc_sampler_sample(struct ldmsd_sampler *pi)
 		ldms_transaction_begin(app_set->set);
 		gettimeofday(&inst->sample_start, NULL);
 		for (i = 0; i < inst->n_fn; i++) {
-			rc = inst->fn[i].fn(inst, app_set->key.task_pid, app_set->set);
+			rc = inst->fn[i].fn(inst, app_set->key.os_pid, app_set->set);
 			if (rc) {
 				INST_LOG(inst, LDMSD_LDEBUG, "Removing set %s. Error %d(%s) from %s\n",
 					ldms_set_instance_name_get(app_set->set),
@@ -1432,7 +1438,7 @@ int __handle_cfg_file(linux_proc_sampler_inst_t inst, char *val)
 uint64_t get_field_value_u64(linux_proc_sampler_inst_t inst, json_entity_t src, enum json_value_e et, const char *name)
 {
 	json_entity_t e = json_value_find(src, name);
-	if (!e) {	
+	if (!e) {
 		INST_LOG(inst, LDMSD_LDEBUG, "no json attribute %s found.\n", name);
 		errno = ENOKEY;
 		return 0;
@@ -1482,7 +1488,7 @@ static json_entity_t get_field(linux_proc_sampler_inst_t inst, json_entity_t src
 	(void)inst;
 #endif
 	json_entity_t e = json_value_find(src, name);
-	if (!e) {	
+	if (!e) {
 #ifdef LPDEBUG
 		INST_LOG(inst, LDMSD_LDEBUG, "no json attribute %s found.\n", name);
 #endif
@@ -1498,7 +1504,7 @@ static json_entity_t get_field(linux_proc_sampler_inst_t inst, json_entity_t src
 	return e;
 }
 
-/* split out here for copyright notice considerations */
+/* functions lifted from forkstat split out here for copyright notice considerations */
 #include "get_stat_field.c"
 
 static uint64_t get_start_tick(linux_proc_sampler_inst_t inst, json_entity_t data, int64_t pid)
@@ -1536,22 +1542,35 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	int len;
 	jbuf_t bjb = NULL;
 	json_entity_t job_id;
-	json_entity_t task_pid;
+	json_entity_t os_pid;
 	json_entity_t task_rank;
 	json_entity_t exe;
+	json_entity_t is_thread;
+	json_entity_t parent_pid;
 	json_entity_t start;
 	char setname[512];
 	exe = get_field(inst, data, JSON_STRING_VALUE, "exe");
 	start = get_field(inst, data, JSON_STRING_VALUE, "start");
 	job_id = get_field(inst, data, JSON_INT_VALUE, "job_id");
-	task_pid = get_field(inst, data, JSON_INT_VALUE, "task_pid");
-	if (!job_id || !task_pid ) {
+	os_pid = get_field(inst, data, JSON_INT_VALUE, "os_pid");
+	parent_pid = get_field(inst, data, JSON_INT_VALUE, "parent_pid");
+	is_thread = get_field(inst, data, JSON_INT_VALUE, "is_thread");
+	if (!job_id || !os_pid ) {
 		goto dump;
 	}
-	uint64_t start_tick = get_start_tick(inst, data, json_value_int(task_pid));
+	pid_t  pid = (pid_t)json_value_int(os_pid);
+	bool is_thread_val = false;
+	pid_t parent = 0;
+	if (is_thread) {
+		is_thread_val = json_value_int(is_thread);
+		parent = json_value_int(parent_pid);
+	} else {
+		parent = get_parent_pid(pid, &is_thread_val);
+	}
+	uint64_t start_tick = get_start_tick(inst, data, pid);
 	if (!start_tick) {
-		INST_LOG(inst, LDMSD_LDEBUG, "ignoring start-tickless pid %" PRId64 "\n",
-			json_value_int(task_pid));
+		INST_LOG(inst, LDMSD_LDEBUG, "ignoring start-tickless pid %"
+			PRId64 "\n", pid);
 		return 0;
 	}
 	const char *start_string;
@@ -1569,7 +1588,7 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	const char *exe_string;
 	char exe_buf[CMDLINE_SZ];
 	if (!exe) {
-		proc_exe_buf(json_value_int(task_pid), exe_buf, sizeof(exe_buf));
+		proc_exe_buf(pid, exe_buf, sizeof(exe_buf));
 		exe_string = exe_buf;
 	} else {
 		exe_string = json_value_str_str(exe);
@@ -1579,20 +1598,20 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	if (task_rank) {
 		task_rank_val = json_value_int(task_rank);
 	}
-/* set instance is $iprefix/$producer/$jobid/$start_time/$task_pid
+/* set instance is $iprefix/$producer/$jobid/$start_time/$os_pid
  * unless it came from spank with task_global_id set, in which case it is.
  * set instance is $iprefix/$producer/$jobid/$start_time/rank/$task_rank
  */
 	if (task_rank_val < 0) {
 		/* we haven't seen the pid as a slurm item yet. */
-		/* set instance is $iprefix/$producer/$jobid/$start_time/$task_pid */
+		/* set instance is $iprefix/$producer/$jobid/$start_time/$os_pid */
 		len = snprintf(setname, sizeof(setname), "%s%s%s/%ld/%s/%" PRId64 "/%s" ,
 				(inst->instance_prefix ? inst->instance_prefix : ""),
 				(inst->instance_prefix ? "/" : ""),
 				inst->base_data->producer_name,
 				json_value_int(job_id),
 				start_string,
-				json_value_int(task_pid), exe_string);
+				(int64_t)pid, exe_string);
 		if (len >= sizeof(setname)) {
 			INST_LOG(inst, LDMSD_LERROR, "set name too big: %s%s%s/%ld/%s/%" PRId64 "/%s",
 				(inst->instance_prefix ? inst->instance_prefix : ""),
@@ -1600,7 +1619,7 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 				inst->base_data->producer_name,
 				json_value_int(job_id),
 				start_string,
-				json_value_int(task_pid), exe_string);
+				(int64_t)pid, exe_string);
 			return ENAMETOOLONG;
 		}
 	} else {
@@ -1627,7 +1646,7 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	if (!app_set)
 		return ENOMEM;
 	app_set->task_rank = task_rank_val;
-	data_set_key(inst, app_set, start_tick, json_value_int(task_pid));
+	data_set_key(inst, app_set, start_tick, pid);
 
 	set = ldms_set_new(setname, inst->base_data->schema);
 	static int warn_once;
@@ -1666,6 +1685,8 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	ldms_metric_set_s64(set, inst->task_rank_idx, task_rank_val);
 	ldms_metric_array_set_str(set, inst->start_time_idx, start_string);
 	ldms_metric_set_u64(set, inst->start_tick_idx, start_tick);
+	ldms_metric_set_s64(set, inst->parent_pid_idx, parent);
+	ldms_metric_set_u8(set, inst->is_thread_idx, is_thread_val ? 1 : 0);
 	ldms_metric_array_set_str(set, inst->exe_idx, exe_string);
 	app_set->set = set;
 	rbn_init(&app_set->rbn, (void*)&app_set->key);
@@ -1735,16 +1756,17 @@ int __handle_task_exit(linux_proc_sampler_inst_t inst, json_entity_t data)
 	struct rbn *rbn;
 	struct linux_proc_sampler_set *app_set;
 	json_entity_t job_id;
-	json_entity_t task_pid;
+	json_entity_t os_pid;
 	job_id = get_field(inst, data, JSON_INT_VALUE, "job_id");
-	task_pid = get_field(inst, data, JSON_INT_VALUE, "task_pid");
-	if (!job_id || !task_pid )
+	os_pid = get_field(inst, data, JSON_INT_VALUE, "os_pid");
+	if (!job_id || !os_pid )
 		return EINVAL;
-	uint64_t start_tick = get_start_tick(inst, data, json_value_int(task_pid));
+	pid_t pid = (pid_t)json_value_int(os_pid);
+	uint64_t start_tick = get_start_tick(inst, data, pid);
 	if (!start_tick)
 		return EINVAL;
 	struct linux_proc_sampler_set app_set_search;
-	data_set_key(inst, &app_set_search, start_tick, json_value_int(task_pid));
+	data_set_key(inst, &app_set_search, start_tick, pid);
 	pthread_mutex_lock(&inst->mutex);
 	rbn = rbt_find(&inst->set_rbt, (void*)&app_set_search.key);
 	if (!rbn) {
@@ -2036,7 +2058,7 @@ int set_rbn_cmp(void *tree_key, const void *key)
 	const struct set_key *k = key;
 	if (tk->start_tick != k->start_tick)
 		return (int64_t)tk->start_tick - (int64_t)k->start_tick;
-	return tk->task_pid - k->task_pid;
+	return tk->os_pid - k->os_pid;
 }
 
 __attribute__((constructor))
