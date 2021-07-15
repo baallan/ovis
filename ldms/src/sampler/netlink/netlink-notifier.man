@@ -25,6 +25,7 @@ Its messages are mostly compatible with those from the slurm spank based notifie
 		 If the -i value > the -m value, -i may effectively filter out additional processes.
 -j file	 file to log json messages and transmission status.
 -l	force stdout line buffering.
+-L file	log to file instead of stdout.
 -r	run with real time FIFO scheduler.
 -s	show short process name in debugging.
 -t	show debugging trace messages.
@@ -76,8 +77,29 @@ The 'short' options do not override the exclude entirely options.
 	 The default 1 is used if env NOTIFIER_LDMS_TIMEOUT is not set.
 .fi
 
+.SH ENVIRONMENT
+The following variables override defaults if a command line option is not present, as describe in the options section.
+.nf
+NOTIFIER_EXCLUDE_PROGRAMS="(nullexe):<unknown>"
+NOTIFIER_EXCLUDE_DIRS=/sbin
+NOTIFIER_EXCLUDE_SHORT_PATH=/bin:/usr
+NOTIFIER_EXCLUDE_SHORT_TIME=1
+NOTIFIER_LDMS_RETRY=600
+NOTIFIER_LDMS_TIMEOUT=1
+NOTIFIER_LDMS_STREAM=slurm
+NOTIFIER_LDMS_XPRT=sock
+NOTIFIER_LDMS_HOST=localhost
+NOTIFIER_LDMS_PORT=411
+NOTIFIER_LDMS_AUTH=munge
+.fi
+Omitting (nullexe):<unknown> from NOTIFIER_EXCLUDE_PROGRAMS may cause incomplete output
+related to processes no longer present. In exotic circumstances, this may be desirable anyway.
+
 .SH NOTES
+.PP
 The core of this utility is derived from forkstat(8).
+.PP
+The output of this utility, if used to drive a sampler, usually needs to be consumed on the same node.
 
 Options are still in development. Several options affect only the trace output.
 .SH EXAMPLES
@@ -92,6 +114,18 @@ netlink-notifier -t -D 30 -g -u 1 -x  -e exec,clone,exit -r  \\
 Run in a typical deployment (sock, munge, port 411, localhost, forever, 10 minute retry):
 .nf
 netlink-notifier
+.fi
+.PP
+Run in a systemd .service wrapper, excluding root owned processes.
+.nf
+EnvironmentFile=-/etc/sysconfig/ldms-netlink-notifier.conf
+ExecStart=/usr/sbin/ldms-netlink-notifier -u 1 -x -e exec,clone,exit -r 
+.fi
+.PP
+Run in a systemd .service wrapper, excluding root owned processes, with debugging files
+.nf
+EnvironmentFile=-/etc/sysconfig/ldms-netlink-notifier.conf
+ExecStart=/usr/sbin/ldms-netlink-notifier -u 1 -x -e exec,clone,exit -r -j /home/user/nl.json -L /home/user/nl.log -t
 .fi
 
 
