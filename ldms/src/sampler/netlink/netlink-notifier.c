@@ -88,6 +88,7 @@
 #include <sys/queue.h>
 #include "ldms_sps.h"
 
+FILE *debug_log;
 #define DEBUG_EMITTER 0 
 /* set 1 to trace which path emits the message by adding emitter field to messages */
 
@@ -95,11 +96,11 @@
 //#define debug_err_lock 1
 #ifdef debug_err_lock
 #define EPRINTF(...) do { \
-	fprintf(stdout, "  locking err at %s:%d\n",__FILE__,__LINE__); \
+	fprintf(debug_log, "  locking err at %s:%d\n",__FILE__,__LINE__); \
 	pthread_mutex_lock(&err_lock); \
-	fprintf(stdout, __VA_ARGS__); \
+	fprintf(debug_log, __VA_ARGS__); \
 	pthread_mutex_unlock(&err_lock); \
-	fprintf(stdout, "unlocking err\n"); \
+	fprintf(debug_log, "unlocking err\n"); \
 } while (0)
 #else
 #define EPRINTF(...) do { \
@@ -112,16 +113,16 @@
 //#define debug_log_lock 1
 #ifdef debug_log_lock
 #define PRINTF(...) do { \
-	fprintf(stdout, "  locking log at %s:%d\n",__FILE__,__LINE__); \
+	fprintf(debug_log, "  locking log at %s:%d\n",__FILE__,__LINE__); \
 	pthread_mutex_lock(&log_lock); \
-	fprintf(stdout, __VA_ARGS__); \
+	fprintf(debug_log, __VA_ARGS__); \
 	pthread_mutex_unlock(&log_lock); \
-	fprintf(stdout, "unlocking log\n"); \
+	fprintf(debug_log, "unlocking log\n"); \
 } while (0)
 #else
 #define PRINTF(...) do { \
 	pthread_mutex_lock(&log_lock); \
-	fprintf(stdout, __VA_ARGS__); \
+	fprintf(debug_log, __VA_ARGS__); \
 	pthread_mutex_unlock(&log_lock); \
 } while (0)
 #endif
@@ -142,6 +143,7 @@
 
 #define TTY_NAME_LEN		(16)		/* Max TTY name length */
 
+#define NULL_STEP_ID		"-1"
 #define NULL_PID		(pid_t)(-1)
 #define NULL_UID		(uid_t)(-1)
 #define NULL_GID		(gid_t)(-1)
@@ -189,7 +191,7 @@ enum rm_type {
 	RM_SLURM, /* found SLURM_JOB_ID */
 	RM_LSF, /* found LSB_JOBID */
 	RM_NONE, /* found no known scheduler */
-	RM_END = RM_UNKNOWN
+	RM_END = RM_NONE
 };
 
 const char *rm_names[] = {
@@ -216,7 +218,7 @@ typedef struct proc_info {
 	int64_t serno;
 	enum rm_type rm_type;	/* resource manager type. */
 	char **pidenv;		/* environment pointers, when jobid has been detectd. */
-	const char *jobid;	/* resource manager jobid, if present in env */
+	char *jobid;		/* resource manager jobid, if present in env, or null if not */
 
 	bool	is_thread;	/* true if a application thread */
 	bool    excluded;	/* true if matches excluded path lists or uid bound */
@@ -1479,6 +1481,7 @@ static void proc_info_free(const pid_t pid, forkstat_t *ft)
 			free_env(info->pidenv);
 			info->pidenv = NULL;
 			free(info->exe);
+			free(info->jobid);
 			info->exe = NULL;
 			free_proc_comm(info->cmdline);
 			info->cmdline = NULL;
@@ -2663,6 +2666,10 @@ static int forkstat_init_ldms_stream(forkstat_t *ft)
 		PRINTF("FAILED ldms_sps_create_1\n");
 		return 1;
 	}
+	PRINTF("Stream handle created for stream=%s xprt=%s host=%s port=%d auth=%s retry=%d timeout=%d\n",
+		stream_arg->paths[0].n,
+                xprt_arg->paths[0].n, host_arg->paths[0].n, port,
+                auth_arg->paths[0].n, retry, timeout);
 	return 0;
 }
 
@@ -2680,16 +2687,38 @@ static int forkstat_finalize_ldms_stream(forkstat_t *ft)
 static char *null_result[1] = {NULL};
 
 /* linear variable lookup from array e. */
-static const char * get_var(const char * v, char **e)
+static const char * get_var(const char * v, char **e, forkstat_t *ft)
 {
 	size_t i = 0;
 	if (!v || !e)
 		return NULL;
 	size_t l = strlen(v);
 	while (e[i] != NULL) {
-		if (strncmp(e[i], v, l) == 0 && e[i][l] == '=')
+		if (strncmp(e[i], v, l) == 0 && e[i][l] == '=') {
+			if (ft->opt_trace)
+				PRINTF("Found env(%s): %s val %s\n", v, e[i],
+					&(e[i][l+1]));
 			return &(e[i][l+1]);
+		}
 		i++;
+	}
+	if (ft->opt_trace)
+		PRINTF("Not Found env(%s)\n", v);
+	return NULL;
+}
+
+static const char * info_get_var(const char * v, const struct proc_info *info, forkstat_t *ft)
+{
+	if (info->pidenv) {
+		if (ft->opt_trace)
+			PRINTF("PID %d: ", info->pid );
+		const char *s = get_var(v, info->pidenv, ft);
+		if (s && !isprint(s[0])) {
+			if (ft->opt_trace)
+				PRINTF("Found not printable.\n");
+			return NULL;
+		}
+		return s;
 	}
 	return NULL;
 }
@@ -2779,6 +2808,8 @@ static jbuf_t add_msg_serial(forkstat_t *ft, jbuf_t jb)
 	return jb;
 }
 
+#define info_jobid_str(info) info->jobid ? info->jobid : "0"
+
 static jbuf_t make_process_start_data_linux(forkstat_t *ft, const struct proc_info *info
 #if DEBUG_EMITTER
 , const char *type
@@ -2801,11 +2832,12 @@ static jbuf_t make_process_start_data_linux(forkstat_t *ft, const struct proc_in
 	jb = jbuf_append_attr(jb, "start", "\"%lu.%06lu\",", info->start.tv_sec, info->start.tv_usec );
 	/* format start_tick as string because u64 is out of ovis_json signed int range */
 	jb = jbuf_append_attr(jb, "start_tick", "\"%" PRIu64 "\",", info->start_tick );
-	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ? info->jobid : "0" );
+	jb = jbuf_append_attr(jb, "job_id", "\"%s\",", info_jobid_str(info));
 	if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "uid", "%"PRId64",", (int64_t)info->uid); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "gid", "%"PRId64",", (int64_t)info->gid); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "serial", "%" PRId64 ",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "os_pid", "%" PRId64 ",", (int64_t)info->pid); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "uid", "%" PRId64 ",", (int64_t)info->uid); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "gid", "%" PRId64 ",", (int64_t)info->gid); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_pid", "%d,", (int)info->pid); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_global_id", "-1,"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "is_thread", "%d,", (int)info->is_thread); if (!jb) goto out_1;
@@ -2834,9 +2866,10 @@ static jbuf_t make_process_end_data_linux(forkstat_t *ft, const struct proc_info
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "start", "\"%lu.%06lu\",", info->start.tv_sec, info->start.tv_usec );
 	jb = jbuf_append_attr(jb, "start_tick", "\"%" PRIu64 "\",", info->start_tick );
-	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ? info->jobid : "0" );
+	jb = jbuf_append_attr(jb, "job_id", "\"%s\",", info_jobid_str(info) );
 	if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "os_pid", "%" PRId64 ",", (int64_t)info->pid); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_pid", "%d", (int)info->pid); if (!jb) goto out_1;
 	jb = jbuf_append_str(jb, "}}");
 
@@ -2854,19 +2887,21 @@ static jbuf_t make_process_start_data_lsf(forkstat_t *ft, const struct proc_info
 	jbd = jb = jbuf_new(); if (!jb) goto out_1;
 	jb = jbuf_append_str(jb, "{"); if (!jb) goto out_1;
 	jb = add_msg_serial(ft, jb); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "schema", "\"slurm_task_data\","); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "schema", "\"lsf_task_data\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "event", "\"task_init_priv\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "timestamp", "%d,", time(NULL)); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "start", "\"%lu.%06lu\",", info->start.tv_sec, info->start.tv_usec );
-	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "job_id", "\"%s\",", info_jobid_str(info) ); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "serial", "%" PRId64 ",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "os_pid", "%" PRId64 ",", (int64_t)info->pid); if (!jb) goto out_1;
 
-	s = get_var("LS_JOBPID", info->pidenv);
+	s = info_get_var("LS_JOBPID", info, ft);
 	jb = jbuf_append_attr(jb, "task_pid", "%s,", s); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "uid", "%d,", info->uid); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "gid", "%d,", info->gid); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "is_thread", "%d,", (int)info->is_thread); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "exe", "\"%s\"", info->exe); if (!jb) goto out_1;
 	jb = jbuf_append_str(jb, "}}");
 
@@ -2889,10 +2924,11 @@ static jbuf_t make_process_end_data_lsf(forkstat_t *ft, const struct proc_info *
 	jb = jbuf_append_attr(jb, "timestamp", "%d,", time(NULL)); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "job_id", "\"%s\",", info_jobid_str(info) ); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "start", "%lu.%06lu,", info->start.tv_sec, info->start.tv_usec );
-	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
-	s = get_var("LS_JOBPID", info->pidenv);
+	jb = jbuf_append_attr(jb, "serial", "%" PRId64 ",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "os_pid", "%" PRId64 ",", (int64_t)info->pid); if (!jb) goto out_1;
+	s = info_get_var("LS_JOBPID", info, ft);
 	jb = jbuf_append_attr(jb, "task_pid", "%s,", s); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "uid", "%d,", info->uid); if (!jb) goto out_1;
 	jb = jbuf_append_str(jb, "}}");
@@ -2923,38 +2959,42 @@ static jbuf_t make_process_start_data_slurm(forkstat_t *ft, const struct proc_in
 #endif
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
-	s = get_var("SLURM_CLUSTER_NAME", info->pidenv);
-	jb = jbuf_append_attr(jb, "cluster", "%s,", s ); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "job_id", "\"%s\",", info_jobid_str(info) ); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "serial", "%" PRId64 ",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "os_pid", "%" PRId64 ",", (int64_t)info->pid); if (!jb) goto out_1;
+	s = info_get_var("SLURM_CLUSTER_NAME", info, ft);
+	jb = jbuf_append_attr(jb, "cluster", "\"%s\",", s ); if (!jb) goto out_1;
 
-	s = get_var("SLURM_STEP_ID", info->pidenv);
+	s = info_get_var("SLURM_STEP_ID", info, ft);
+	if (!s)
+		s = NULL_STEP_ID;
 	jb = jbuf_append_attr(jb, "step_id", "%s,", s); if (!jb) goto out_1;
 
-	s = get_var("SLURM_TASK_PID", info->pidenv);
+	s = info_get_var("SLURM_TASK_PID", info, ft);
 	jb = jbuf_append_attr(jb, "task_pid", "%s,", s); if (!jb) goto out_1;
 
-	s = get_var("SLURM_NODEID", info->pidenv);
+	s = info_get_var("SLURM_NODEID", info, ft);
 	jb = jbuf_append_attr(jb, "nodeid", "%s,", s); if (!jb) goto out_1;
 
 	jb = jbuf_append_attr(jb, "task_id", "-1,"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_global_id", "-1,"); if (!jb) goto out_1;
 
-	s = get_var("SLURM_JOB_UID", info->pidenv);
+	s = info_get_var("SLURM_JOB_UID", info, ft);
 	jb = jbuf_append_attr(jb, "uid", "%s,", s); if (!jb) goto out_1;
 
-	s = get_var("SLURM_JOB_GID", info->pidenv);
+	s = info_get_var("SLURM_JOB_GID", info, ft);
 	jb = jbuf_append_attr(jb, "gid", "%s,", s); if (!jb) goto out_1;
 
-	jb = jbuf_append_attr(jb, "exe", "\"%s\"", info->exe); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "is_thread", "%d,", (int)info->is_thread); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "exe", "\"%s\",", info->exe); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "ncpus", "-1,"); if (!jb) goto out_1;
 
-	s = get_var("SLURM_JOB_NUM_NODES", info->pidenv);
+	s = info_get_var("SLURM_JOB_NUM_NODES", info, ft);
 	jb = jbuf_append_attr(jb, "nnodes", "%s,", s); if (!jb) goto out_1;
 
 	jb = jbuf_append_attr(jb, "local_tasks", "-1,"); if (!jb) goto out_1;
 
-	s = get_var("SLURM_NTASKS", info->pidenv);
+	s = info_get_var("SLURM_NTASKS", info, ft);
 	jb = jbuf_append_attr(jb, "total_tasks", "%s", s); if (!jb) goto out_1;
 	jb = jbuf_append_str(jb, "}}");
 
@@ -2979,15 +3019,18 @@ static jbuf_t make_process_end_data_slurm(forkstat_t *ft, const struct proc_info
 	jb = jbuf_append_attr(jb, "timestamp", "%d,", time(NULL)); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "context", "\"*\","); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "data", "{"); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "job_id", "%s,", info->jobid ); if (!jb) goto out_1;
-	jb = jbuf_append_attr(jb, "serial", "%"PRId64",", info->serno); if (!jb) goto out_1;
-	s = get_var("SLURM_CLUSTER_NAME", info->pidenv);
-	jb = jbuf_append_attr(jb, "cluster", "%s,", s ); if (!jb) goto out_1;
-	s = get_var("SLURM_STEP_ID", info->pidenv);
+	jb = jbuf_append_attr(jb, "job_id", "\"%s\",", info_jobid_str(info) ); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "serial", "%" PRId64 ",", info->serno); if (!jb) goto out_1;
+	jb = jbuf_append_attr(jb, "os_pid", "%" PRId64 ",", (int64_t)info->pid); if (!jb) goto out_1;
+	s = info_get_var("SLURM_CLUSTER_NAME", info, ft);
+	jb = jbuf_append_attr(jb, "cluster", "\"%s\",", s ); if (!jb) goto out_1;
+	s = info_get_var("SLURM_STEP_ID", info, ft);
+	if (!s)
+		s = NULL_STEP_ID;
 	jb = jbuf_append_attr(jb, "step_id", "%s,", s); if (!jb) goto out_1;
-	s = get_var("SLURM_TASK_PID", info->pidenv);
+	s = info_get_var("SLURM_TASK_PID", info, ft);
 	jb = jbuf_append_attr(jb, "task_pid", "%s,", s); if (!jb) goto out_1;
-	s = get_var("SLURM_NODEID", info->pidenv);
+	s = info_get_var("SLURM_NODEID", info, ft);
 	jb = jbuf_append_attr(jb, "nodeid", "%s,", s); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_id", "-1,"); if (!jb) goto out_1;
 	jb = jbuf_append_attr(jb, "task_global_id", "-1,"); if (!jb) goto out_1;
@@ -3000,35 +3043,47 @@ static jbuf_t make_process_end_data_slurm(forkstat_t *ft, const struct proc_info
 }
 
 /* find resource manager type, jobid */
-static enum rm_type get_rm_from_env(char **pidenv, struct proc_info *info)
+static enum rm_type get_rm_from_env(char **pidenv, struct proc_info *info, forkstat_t *ft)
 {
 	if (!pidenv)
 		return RM_NONE;
-	const char *s = get_var("SLURM_JOB_ID", pidenv);
+	if (ft->opt_trace)
+		PRINTF("Pid %d: ", info->pid );
+	const char *s = get_var("SLURM_JOB_ID", pidenv, ft);
 	if (s) {
-		info->jobid = s;
+		info->jobid = strdup(s);
+#if 0 /* treat all descendent process as slurm-related */
 		int tpid = -1;
-		s = get_var("SLURM_TASK_PID", pidenv);
+		s = get_var("SLURM_TASK_PID", pidenv, ft);
 		if (s)
 			tpid = atoi(s);
 		if (tpid == info->pid)
 			/* we call it a slurm pid only if slurm knows about it */
+#endif
 			return RM_SLURM;
+#if 0
 		else
 			return RM_NONE;
+#endif
 	}
-	s = get_var("LSB_JOBID", pidenv);
+	if (ft->opt_trace)
+		PRINTF("Pid %d: ", info->pid );
+	s = get_var("LSB_JOBID", pidenv, ft);
 	if (s) {
-		info->jobid = s;
+		info->jobid = strdup(s);
+#if 0 /* treat all descendent process as lsf-related */
 		int tpid = -1;
-		s = get_var("LS_JOBPID", pidenv);
+		s = get_var("LS_JOBPID", pidenv, ft);
 		if (s)
 			tpid = atoi(s);
 		if (tpid == info->pid)
 			/* we call it a lsf pid only if lsf/sbatchd knows about it */
+#endif
 			return RM_LSF;
+#if 0
 		else
 			return RM_NONE;
+#endif
 	}
 	return RM_NONE;
 }
@@ -3040,7 +3095,7 @@ static jbuf_t make_ldms_message(forkstat_t *ft, struct proc_info *info, const ch
 	size_t pesize = 0;
 	if (info->rm_type == RM_UNKNOWN) {
 		pidenv = load_pid_env(info->pid, &pesize);
-		info->rm_type = get_rm_from_env(pidenv, info);
+		info->rm_type = get_rm_from_env(pidenv, info, ft);
 		if (info->rm_type != RM_NONE)
 			info->pidenv = pidenv;
 		else
@@ -3116,7 +3171,9 @@ static int emit_info(forkstat_t *ft, struct proc_info *info, const char *type, i
 	pid_t pid = info->pid;
 	if (lock)
 		proc_info_get(pid, ft); // lock the bucket so info doesn't disappear during emit.
-	if (info->exe && strcmp(info->exe, "(nullexe)") != 0 && !info->emitted) {
+	if (info->exe && strcmp(info->exe, "(nullexe)") != 0 && 
+		(!info->emitted || (strcmp(type,"exit") == 0 && 
+					info->emitted < EMIT_EXIT) )) {
 		/*
 		PRINTF("SENDING NOTICE for  %d: %s %s (start=%lu.%06lu)\n",
 			pid, type, info->exe, info->start.tv_sec,
@@ -3162,6 +3219,16 @@ static int send_ldms_message(forkstat_t *ft, jbuf_t jb)
 			fprintf(ft->json_log, " {\"msgno\"=\"undefined\", \"status\"=\%d:%s\"}\n", r.rc, r.publish_count ? "SENT" : "FAIL");
 		}
 	}
+	return 0;
+}
+
+static int forkstat_set_debug_log(forkstat_t *ft, const char *fname)
+{
+	if (!ft || !fname)
+		return EINVAL;
+	debug_log = fopen(fname, "a");
+	if (!debug_log)
+		return errno;
 	return 0;
 }
 
@@ -3245,6 +3312,7 @@ static void *dump_pids(void *vp)
 
 int main(int argc, char * argv[])
 {
+	debug_log = stdout;
 	long int opt_duration = -1;	/* duration, < 0 means run forever */
 	size_t i;
 	int ret = EXIT_FAILURE;
@@ -3287,7 +3355,7 @@ int main(int argc, char * argv[])
 	while (1) {
 		// int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
-		c = getopt_long(argc, args, "cdD:e:Eghi:j:lm:rstqxXu:v:",
+		c = getopt_long(argc, args, "cdD:e:Eghi:j:L:lm:rstqxXu:v:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -3340,6 +3408,12 @@ int main(int argc, char * argv[])
 		case 'j':
 			if (forkstat_set_json_log(ft, optarg)) {
 				(void)fprintf(stderr, "-f %s failed.\n", optarg);
+				exit(EXIT_FAILURE);
+			}
+			break;
+		case 'L':
+			if (forkstat_set_debug_log(ft, optarg)) {
+				(void)fprintf(stderr, "-L %s failed.\n", optarg);
 				exit(EXIT_FAILURE);
 			}
 			break;
@@ -3475,5 +3549,7 @@ abort_sock:
 done:
 	for (c = 0; c < nlongopt; c++)
 		reset_excludes(&excludes[c]);
+	if (debug_log != stdout)
+		fclose(debug_log);
 	exit(ret);
 }
