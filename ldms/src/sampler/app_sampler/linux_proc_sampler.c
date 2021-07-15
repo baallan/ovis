@@ -485,6 +485,7 @@ struct linux_proc_sampler_inst_s {
 	ldmsd_msg_log_f log;
 	base_data_t base_data;
 	char *instance_prefix;
+	bool exe_suffix;
 	struct timeval sample_start;
 
 	struct rbt set_rbt;
@@ -1249,12 +1250,13 @@ static
 char *_help = "\
 linux_proc_sampler config synopsis: \n\
     config name=linux_proc_sampler [COMMON_OPTIONS] [stream=STREAM]\n\
-			    [metrics=METRICS] [cfg_file=FILE]\n\
+			    [metrics=METRICS] [cfg_file=FILE] [exe_suffix=1>]]\n\
 \n\
 Option descriptions:\n\
     instance_prefix    The prefix for generated instance names. Typically a cluster name\n\
 		when needed to disambiguate producer names that appear in multiple clusters.\n\
 	      (default: no prefix).\n\
+    exe_suffix  Append executable path to set instance names.\n\
     stream    The name of the `ldmsd_stream` to listen for SLURM job events.\n\
 	      (default: slurm).\n\
     metrics   The comma-separated list of metrics to monitor.\n\
@@ -1285,6 +1287,16 @@ The following is an example of cfg_file:\n\
   ]\n\
 }\n\
 ```\n\
+\n\
+The following metadata metrics are always reported:\n\
+name\ttype\tnotes\n\
+task_rank u64 The PID or if slurm present the SLURM_TASK_RANK (inherited by child processes). \n\
+start_time char[20] The epoch time when the process started, as estimated from the start_tick.\n\
+start_tick u64 The node local start time in jiffies from /proc/$pid/stat.\n\
+is_thread u8 Boolean value noting if the process is a child thread in e.g. an OMP application.\n\
+parent s64 The parent pid of the process.\n\
+exe char[] The full path of the executable.\n\
+\n\
 ";
 
 static char *help_all;
@@ -1294,7 +1306,7 @@ static void compute_help() {
 	int i;
 	dsinit2(ds, CMDLINE_SZ);
 	dscat(ds, _help);
-	dscat(ds, "\nThe list of metric names and types is:\n");
+	dscat(ds, "\nThe list of optional metric names and types is:\n");
 	for (i = 1; i <= _APP_LAST; i++) {
 		mi = &metric_info[i];
 		snprintf(name_buf, sizeof name_buf, "\n%10s%s\t%s",
@@ -1381,6 +1393,10 @@ int __handle_cfg_file(linux_proc_sampler_inst_t inst, char *val)
 			goto out;
 		}
 	}
+	ent = json_value_find(jdoc, "exe_suffix");
+	if (ent) {
+		inst->exe_suffix = 1;
+	}
 	ent = json_value_find(jdoc, "stream");
 	if (ent) {
 		if (ent->type != JSON_STRING_VALUE) {
@@ -1405,7 +1421,7 @@ int __handle_cfg_file(linux_proc_sampler_inst_t inst, char *val)
 					 "Error: metric must be a string.");
 				goto out;
 			}
-			minfo = find_metric_info_by_name(ent->value.str_->str);
+			minfo = find_metric_info_by_name(json_value_str_str(ent));
 			if (!minfo) {
 				rc = ENOENT;
 				INST_LOG(inst, LDMSD_LERROR,
@@ -1456,7 +1472,7 @@ uint64_t get_field_value_u64(linux_proc_sampler_inst_t inst, json_entity_t src, 
 			return u64;
 		} else {
 			INST_LOG(inst, LDMSD_LDEBUG, "unconvertible to uint64_t: %s from %s.\n",
-				json_value_str(e), name);
+				json_value_str_str(e), name);
 			errno = EINVAL;
 			return 0;
 		}
@@ -1543,6 +1559,7 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	jbuf_t bjb = NULL;
 	json_entity_t job_id;
 	json_entity_t os_pid;
+	json_entity_t task_pid;
 	json_entity_t task_rank;
 	json_entity_t exe;
 	json_entity_t is_thread;
@@ -1553,12 +1570,18 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
 	start = get_field(inst, data, JSON_STRING_VALUE, "start");
 	job_id = get_field(inst, data, JSON_INT_VALUE, "job_id");
 	os_pid = get_field(inst, data, JSON_INT_VALUE, "os_pid");
+	task_pid = get_field(inst, data, JSON_INT_VALUE, "task_pid");
 	parent_pid = get_field(inst, data, JSON_INT_VALUE, "parent_pid");
 	is_thread = get_field(inst, data, JSON_INT_VALUE, "is_thread");
-	if (!job_id || !os_pid ) {
+	if (!job_id || (!os_pid && !task_pid)) {
 		goto dump;
 	}
-	pid_t  pid = (pid_t)json_value_int(os_pid);
+	pid_t  pid;
+	if (os_pid)
+		pid = (pid_t)json_value_int(os_pid);
+	else
+		pid = json_value_int(task_pid); /* from spank plugin */
+
 	bool is_thread_val = false;
 	pid_t parent = 0;
 	if (is_thread) {
@@ -1602,43 +1625,49 @@ int __handle_task_init(linux_proc_sampler_inst_t inst, json_entity_t data)
  * unless it came from spank with task_global_id set, in which case it is.
  * set instance is $iprefix/$producer/$jobid/$start_time/rank/$task_rank
  */
+	const char *esep = "";
+	const char *esuffix = "";
+	if (inst->exe_suffix) {
+		esep = "/";
+		esuffix = exe_string;
+	}
 	if (task_rank_val < 0) {
 		/* we haven't seen the pid as a slurm item yet. */
 		/* set instance is $iprefix/$producer/$jobid/$start_time/$os_pid */
-		len = snprintf(setname, sizeof(setname), "%s%s%s/%ld/%s/%" PRId64 "/%s" ,
+		len = snprintf(setname, sizeof(setname), "%s%s%s/%ld/%s/%" PRId64 "%s%s" ,
 				(inst->instance_prefix ? inst->instance_prefix : ""),
 				(inst->instance_prefix ? "/" : ""),
 				inst->base_data->producer_name,
 				json_value_int(job_id),
 				start_string,
-				(int64_t)pid, exe_string);
+				(int64_t)pid, esep, esuffix);
 		if (len >= sizeof(setname)) {
-			INST_LOG(inst, LDMSD_LERROR, "set name too big: %s%s%s/%ld/%s/%" PRId64 "/%s",
+			INST_LOG(inst, LDMSD_LERROR, "set name too big: %s%s%s/%ld/%s/%" PRId64 "%s%s",
 				(inst->instance_prefix ? inst->instance_prefix : ""),
 				(inst->instance_prefix ? "/" : ""),
 				inst->base_data->producer_name,
 				json_value_int(job_id),
 				start_string,
-				(int64_t)pid, exe_string);
+				(int64_t)pid, esep, esuffix);
 			return ENAMETOOLONG;
 		}
 	} else {
 		/* set instance is $iprefix/$producer/$jobid/$start_time/rank/$task_rank */
-		len = snprintf(setname, sizeof(setname), "%s%s%s/%ld/%s/rank/%" PRId64 "/%s",
+		len = snprintf(setname, sizeof(setname), "%s%s%s/%ld/%s/rank/%" PRId64 "%s%s",
 				(inst->instance_prefix ? inst->instance_prefix : ""),
 				(inst->instance_prefix ? "/" : ""),
 				inst->base_data->producer_name,
 				json_value_int(job_id),
 				start_string,
-				task_rank_val, exe_string);
+				task_rank_val, esep, esuffix);
 		if (len >= sizeof(setname)) {
-			INST_LOG(inst, LDMSD_LERROR, "set name too big: %s%s%s/%ld/%s/rank/%" PRId64 "/%s",
+			INST_LOG(inst, LDMSD_LERROR, "set name too big: %s%s%s/%ld/%s/rank/%" PRId64 "%s%s",
 				(inst->instance_prefix ? inst->instance_prefix : ""),
 				(inst->instance_prefix ? "/" : ""),
 				inst->base_data->producer_name,
 				json_value_int(job_id),
 				start_string,
-				task_rank_val, exe_string);
+				task_rank_val, esep, esuffix);
 			return ENAMETOOLONG;
 		}
 	}
@@ -1877,6 +1906,14 @@ linux_proc_sampler_config(struct ldmsd_plugin *pi, struct attr_value_list *kwl,
 				rc = ENOMEM;
 				goto err;
 			}
+		}
+		val = av_value(kwl, "exe_suffix");
+		if (val) {
+			inst->exe_suffix = true;
+		}
+		val = av_value(avl, "exe_suffix");
+		if (val) {
+			inst->exe_suffix = true;
 		}
 		val = av_value(avl, "stream");
 		if (val) {
