@@ -106,6 +106,7 @@ static ldmsd_prdcr_set_t prdcr_set_new(const char *inst_name, const char *schema
 	ldmsd_prdcr_set_t set = calloc(1, sizeof *set);
 	if (!set)
 		goto err_0;
+	ldmsd_log(LDMSD_LINFO, "Adding producer set for %s\n", inst_name);
 	set->state = LDMSD_PRDCR_SET_STATE_START;
 	set->inst_name = strdup(inst_name);
 	if (!set->inst_name)

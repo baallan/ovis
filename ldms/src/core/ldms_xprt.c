@@ -74,6 +74,8 @@
 #include "ldms_xprt.h"
 #include "ldms_private.h"
 
+#define DEBUG_SET_DELETE
+
 #define LDMS_XPRT_AUTH_GUARD(x) (((x)->auth_flag != LDMS_XPRT_AUTH_DISABLE) && \
 				 ((x)->auth_flag != LDMS_XPRT_AUTH_APPROVED))
 
@@ -682,14 +684,25 @@ static void process_set_delete_request(struct ldms_xprt *x, struct ldms_request 
 	struct ldms_set *set;
 	struct ldms_rbuf_desc *r;
 
+#ifdef DEBUG_SET_DELETE
+	x->log("%s: try to remove %s\n", __FUNCTION__, req->set_delete.inst_name);
+#endif
 	__ldms_set_tree_lock();
 	set = __ldms_find_local_set(req->set_delete.inst_name);
 	__ldms_set_tree_unlock();
-	if (!set)
+	if (!set) {
+#ifdef DEBUG_SET_DELETE
+		x->log("%s: not found in set_tree: %s\n", __FUNCTION__, req->set_delete.inst_name);
+#endif
 		goto reply;
+	}
 	r = ldms_lookup_rbd(x, set);
-	if (!r)
+	if (!r) {
+#ifdef DEBUG_SET_DELETE
+		x->log("%s: not found in rbd: %s\n", __FUNCTION__, req->set_delete.inst_name);
+#endif
 		goto reply_1;
+	}
 	if (x->event_cb) {
 		struct ldms_xprt_event event;
 		event.type = LDMS_XPRT_EVENT_SET_DELETE;
@@ -3436,6 +3449,10 @@ void ldms_xprt_set_delete(ldms_set_t s, ldms_set_delete_cb_t cb_fn, void *cb_arg
 		req = (struct ldms_request *)(ctxt + 1);
 		len = format_set_delete_req(req, (uint64_t)(unsigned long)ctxt,
 					    ldms_set_instance_name_get(s));
+#ifdef DEBUG_SET_DELETE
+		xprt->log("%s: requesting remote delete %s\n", __FUNCTION__,
+		       ldms_set_instance_name_get(s));
+#endif
 		zap_err_t zerr = zap_send(xprt->zap_ep, req, len);
 		if (zerr) {
 			xprt->zerrno = zerr;
