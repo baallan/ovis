@@ -185,7 +185,7 @@ static void event_cb(ldms_t x, ldms_xprt_event_t e, void *cb_arg)
 	pthread_cond_signal(&client->wait_cond);
 	pthread_mutex_unlock(&client->wait_lock);
 #ifdef LNDEBUG
-	DEBUGL(LDBG, "Event %s received for client xprt=%s host=%s port=%s auth=%s\n",
+	DEBUGC(client, LDBG, "Event %s received for client xprt=%s host=%s port=%s auth=%s\n",
 		event, client->xprt, client->host, client->port, client->auth);
 #endif
 }

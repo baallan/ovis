@@ -1205,16 +1205,25 @@ linux_proc_sampler_update_schema(linux_proc_sampler_inst_t inst, ldms_schema_t s
 void app_set_destroy(linux_proc_sampler_inst_t inst, struct linux_proc_sampler_set *a)
 {
 #ifdef LPDEBUG
-	INST_LOG(inst, LDMSD_LDEBUG, "Removing set %s\n",
-		ldms_set_instance_name_get(a->set));
+	const char *iname = ldms_set_instance_name_get(a->set);
+	INST_LOG(inst, LDMSD_LDEBUG, "Removing set %s\n", iname);
 	INST_LOG(inst, LDMSD_LDEBUG,"Uncreating key at %p: %" PRIu64 " , %" PRId64 "\n",
 		&a->key, a->key.start_tick, a->key.os_pid);
 #else
 	(void)inst;
 #endif
 	ldmsd_set_deregister(ldms_set_instance_name_get(a->set), SAMP);
+#ifdef LPDEBUG
+	INST_LOG(inst, LDMSD_LDEBUG, "Deregistered %s\n", iname);
+#endif
 	ldms_set_unpublish(a->set);
+#ifdef LPDEBUG
+	INST_LOG(inst, LDMSD_LDEBUG, "Unpublished %s\n", iname);
+#endif
 	ldms_set_delete(a->set);
+#ifdef LPDEBUG
+	INST_LOG(inst, LDMSD_LDEBUG, "Deleted %s\n", iname);
+#endif
 	a->key.start_tick = 0;
 	a->key.os_pid = 0;
 	a->set = NULL;
@@ -1255,13 +1264,13 @@ static int linux_proc_sampler_sample(struct ldmsd_sampler *pi)
 		ldms_transaction_end(app_set->set);
 	}
 	while (!LIST_EMPTY(&del_list)) {
-                app_set = LIST_FIRST(&del_list);
+		app_set = LIST_FIRST(&del_list);
 		rbn = rbt_find(&inst->set_rbt, &app_set->key);
 		if (rbn)
 			rbt_del(&inst->set_rbt, rbn);
-                LIST_REMOVE(app_set, del);
-                app_set_destroy(inst, app_set);
-        }
+		LIST_REMOVE(app_set, del);
+		app_set_destroy(inst, app_set);
+	}
 	pthread_mutex_unlock(&inst->mutex);
 	return 0;
 }

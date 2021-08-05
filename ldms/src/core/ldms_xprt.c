@@ -730,6 +730,10 @@ static
 void process_set_delete_reply(struct ldms_xprt *x, struct ldms_reply *reply,
 			      struct ldms_context *ctxt)
 {
+#ifdef DEBUG_SET_DELETE
+	x->log("%s: got remote reply %s\n", __FUNCTION__,
+	       ldms_set_instance_name_get(ctxt->set_delete.s));
+#endif
 	ctxt->set_delete.cb(x, reply->hdr.rc, ctxt->set_delete.s, ctxt->set_delete.cb_arg);
 	pthread_mutex_lock(&x->lock);
 	__ldms_free_ctxt(x, ctxt);
@@ -3451,7 +3455,7 @@ void ldms_xprt_set_delete(ldms_set_t s, ldms_set_delete_cb_t cb_fn, void *cb_arg
 					    ldms_set_instance_name_get(s));
 #ifdef DEBUG_SET_DELETE
 		xprt->log("%s: requesting remote delete %s\n", __FUNCTION__,
-		       ldms_set_instance_name_get(s));
+			ldms_set_instance_name_get(s));
 #endif
 		zap_err_t zerr = zap_send(xprt->zap_ep, req, len);
 		if (zerr) {
