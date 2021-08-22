@@ -823,7 +823,7 @@ ldms/src/store/Makefile
 ldms/src/sampler/Makefile
 ldms/src/contrib/Makefile
 ldms/src/sampler/blob_stream/Makefile
-ldms/src/store/hello_stream/Makefile
+ldms/src/store/stream/Makefile
 ldms/src/store/kokkos/Makefile
 ldms/src/store/papi/Makefile
 ldms/src/store/slurm/Makefile
