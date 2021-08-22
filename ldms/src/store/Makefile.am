@@ -84,5 +84,5 @@ SUBDIRS += store_app
 endif
 
 if ENABLE_HELLO_STREAM
-SUBDIRS += hello_stream
+SUBDIRS += stream
 endif
