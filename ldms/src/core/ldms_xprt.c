@@ -74,7 +74,6 @@
 #include "ldms_xprt.h"
 #include "ldms_private.h"
 
-#define DEBUG_SET_DELETE
 
 #define LDMS_XPRT_AUTH_GUARD(x) (((x)->auth_flag != LDMS_XPRT_AUTH_DISABLE) && \
 				 ((x)->auth_flag != LDMS_XPRT_AUTH_APPROVED))
