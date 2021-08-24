@@ -18,14 +18,16 @@ cat << EOF > $LDMSD_RUN/metrics.input
          ]
        }
 EOF
-rm -f $LOGDIR/json*.log
-# valgrind -v --tool=drd --log-file=$LOGDIR/vg.netlink.txt ${BUILDDIR}/sbin/ldms-netlink-notifier --port=61061 --auth=none --retry=1 -D 30 -r -j $LOGDIR/json.log --exclude-dir-path= --exclude-short-path= --exclude-programs &
-${BUILDDIR}/sbin/ldms-netlink-notifier --port=61061 --auth=none --retry=1 -D 30 -r -j $LOGDIR/json.log --exclude-dir-path= --exclude-short-path= --exclude-programs &
+rm -f $LOGDIR/json*.log $LOGDIR/netlink.send.log
+#valgrind -v --tool=drd --log-file=$LOGDIR/vg.netlink.txt ${BUILDDIR}/sbin/ldms-netlink-notifier --port=61061 --auth=none --retry=1 -D 30 -r -j $LOGDIR/json.log --exclude-dir-path= --exclude-short-path= --exclude-programs &
+
+${BUILDDIR}/sbin/ldms-netlink-notifier --port=61061 --auth=none --retry=1 -D 30 -r -j $LOGDIR/json.log --exclude-dir-path= --exclude-short-path= --exclude-programs --send-log=$LOGDIR/netlink.send.log  &
+
 # uncomment next one to test duplicate handling
 #${BUILDDIR}/sbin/ldms-netlink-notifier --port=61061 --auth=none --retry=1 -D 30 -r -j $LOGDIR/json2.log --exclude-dir-path= --exclude-short-path= --exclude-programs &
 VGARGS="--leak-check=full --track-origins=yes --trace-children=yes"
-# VGARGS="--tool=drd "
-#vgon
+VGARGS="--tool=drd --suppressions=$input.drd.supp --gen-suppressions=all"
+vgoff
 LDMSD 1
 vgoff
 LDMSD 2 3
