@@ -136,7 +136,7 @@ static int rolltype = DEFAULT_ROLLTYPE;
     rolltype==4 and rollover < MIN_ROLL_BYTES -> rollover = MIN_ROLL_BYTES */
 #define MIN_ROLL_BYTES 1024
 /** Interval to check for passing the record or byte count limits. */
-#define ROLL_LIMIT_INTERVAL 60
+#define ROLL_LIMIT_INTERVAL 5
 #define ROLL_DEFAULT_SLEEP 60
 
 
@@ -149,7 +149,7 @@ static int flthread_used = 0;
 static char* root_path = NULL;
 static char* container = NULL;
 static int buffer = 1;
-static pthread_mutex_t cfg_lock; //about config args, not about the header
+static pthread_mutex_t cfg_lock; /* serializes config args and stream_idx */
 
 static idx_t stream_idx;
 
@@ -227,7 +227,10 @@ static void close_streamstore(void *obj, void *cb_arg){
         struct csv_stream_handle *stream_handle =
                 (struct csv_stream_handle *)obj;
 
-        if (!stream_handle) return;
+        if (!stream_handle) {
+		pthread_mutex_unlock(&cfg_lock);
+		return;
+	}
 
         pthread_mutex_lock(&stream_handle->lock);
 
@@ -599,7 +602,7 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
                 stream_handle->store_count++; /** stream_cb has the lock, so
                                                   roll cannot be called while
                                                   this is going on. */
-		return 0;
+		goto out;
 	}
 
 	//if header has a list.....
@@ -624,7 +627,7 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
                 stream_handle->store_count++; /** stream_cb has the lock, so
                                                   roll cannot be called while
                                                   this is going on. */
-		return 0;
+		goto out;
 	}
 
 	//if we got the val, but its not a list
@@ -654,7 +657,7 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
                 stream_handle->store_count++; /** stream_cb has the lock, so
                                                   roll cannot be called while
                                                   this is going on. */
-		return 0;
+		goto out;
 	}
 
 	//if there are dicts
@@ -706,6 +709,9 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
                                                   this is going on. */
 	}
 	jbuf_free(jbs);
+out:
+	msglog(LDMSD_LDEBUG, PNAME ": message processed. store_count = %d\n",
+			stream_handle->store_count);
 
 	return 0;
 }
@@ -723,13 +729,14 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
 	int rc = 0;
 
 
+	if (!stream_idx) {
+                msglog(LDMSD_LDEBUG, PNAME ": ignoring stream_cb after _fini\n");
+		return 0;
+	}
         /** diagnostics logging */
 
-        //msglog(LDMSD_LDEBUG,
-        //PNAME ": Calling stream_cb. on stream '%s'\n",
-        //ldmsd_stream_client_name(c));
-        //               PNAME ": Calling stream_cb. msg '%s' on stream '%s'\n",
-        //               msg, ldmsd_stream_client_name(c));
+        msglog(LDMSD_LDEBUG, PNAME ": Calling stream_cb. on stream '%s'. msg_count=%d\n",
+		ldmsd_stream_client_name(c), msg_count);
 
 	msg_count += 1;
 	if (0 == (msg_count % CB_MSG_LOG)) {
@@ -749,9 +756,8 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
                 return -1;
         }
 
-        pthread_mutex_lock(&cfg_lock); /** really don't need this, since cannot
-                                           dynamically add streams and cannot
-                                           destroy them */
+        pthread_mutex_lock(&cfg_lock);
+	/* lock needed for clean shutdown */
         stream_handle = idx_find(stream_idx, (void *)skey, strlen(skey));
         if (!stream_handle){
                 msglog(LDMSD_LERROR,
@@ -1237,18 +1243,25 @@ static int config(struct ldmsd_plugin *self,
 	int rc;
 
 	pthread_mutex_lock(&cfg_lock);
-        //only call once. cannot reset state from subscribe.
-        if (cfgstate != CFG_PRE){
-                msglog(LDMSD_LDEBUG, PNAME ": cannot call config again\n");
+	if (stream_idx || cfgstate != CFG_PRE) {
+                msglog(LDMSD_LERROR, PNAME ": cannot call config again\n");
                 pthread_mutex_unlock(&cfg_lock);
-                return -1;
-        }
+		return -1;
+	} else {
+		stream_idx = idx_create();
+		if (!stream_idx) {
+			msglog(LDMSD_LERROR, PNAME ": out of memory\n");
+			cfgstate = CFG_FAILED;
+			pthread_mutex_unlock(&cfg_lock);
+			return -1;
+		}
+	}
 
 	s = av_value(avl, "buffer");
 	if (s){
 		buffer = atoi(s);
 		msglog(LDMSD_LDEBUG,
-                       PNAME ": setting buffer to '%d'\n", buffer);
+                       PNAME ": setting buffer to '%d' from %s\n", buffer, s);
 	}
 
 	s = av_value(avl, "stream");
@@ -1332,40 +1345,46 @@ static int config(struct ldmsd_plugin *self,
                 rollover = atoi(m);
                 if (rolltype < MINROLLTYPE || rolltype > MAXROLLTYPE){
                         msglog(LDMSD_LERROR, PNAME
-                               ": rolltype out of range.\n");
+                               ": rolltype out of range: '%s'.\n", s);
                         rc = EINVAL;
                         goto err;
                 }
 
                 if (rollover < 0){
                         msglog(LDMSD_LERROR, PNAME
-                               ": Error: bad rollover value %d\n", rollover);
+                               ": Error: bad rollover value %s\n", m);
                         rc = EINVAL;
                         goto err;
                 }
 
+		if (rolltype == 1 && rollover < MIN_ROLL_1) {
+			msglog(LDMSD_LWARNING, PNAME
+				": rollover %d will be rounded up to %d\n",
+				rollover, MIN_ROLL_1);
+			rollover = MIN_ROLL_1;
+		}
                 if (rolltype == MAXROLLTYPE){
                         s = av_value(avl,"rollagain");
                         if (s){
                                 rollagain = atoi(s);
-                                if (rollagain < 0){
+                                if (rollagain < 0) {
                                         msglog(LDMSD_LERROR, PNAME
-                                               ": bad rollagain= value %d\n", rollagain);
+						": bad rollagain '%s'\n", s);
                                         rc = EINVAL;
                                         goto err;
                                 }
                                 if (rollagain < rollover || rollagain < MIN_ROLL_1){
-                                        msglog(LDMSD_LERROR,
-                                               "%s: rolltype=5 needs rollagain > max(rollover,10)\n");
                                         msglog(LDMSD_LERROR, PNAME
-                                               ": rollagain=%d rollover=%d\n",
-                                               rollover, rollagain);
+						": rolltype=5 needs rollagain"
+						" > max(rollover,10). "
+						": rollagain '%s', rollover '%s'\n",
+						s, m);
                                         rc = EINVAL;
                                         goto err;
                                 }
                         } else {
                                 msglog(LDMSD_LERROR, PNAME
-                                       ": rolltype %d requires rollagain\n",
+                                       ": rolltype %d requires rollagain=<value>\n",
                                        rolltype);
                         }
                 }
@@ -1385,7 +1404,8 @@ static int config(struct ldmsd_plugin *self,
                 pthread_create(&flthread, NULL, flushThreadInit, NULL);
                 flthread_used = 1;
                 msglog(LDMSD_LDEBUG,
-                       PNAME ": setting default flush time to %d\n", flushtime);
+                       PNAME ": setting default flush time to %d from %s\n",
+			flushtime, s);
         }
 
 
@@ -1432,7 +1452,6 @@ out:
 
 static void term(struct ldmsd_plugin *self)
 {
-
         pthread_mutex_lock(&cfg_lock);
         free(root_path);
 	root_path = NULL;
@@ -1444,11 +1463,13 @@ static void term(struct ldmsd_plugin *self)
         rollagain = 0;
         flushtime = 0;
 
-        idx_traverse(stream_idx, close_streamstore, NULL);
-        idx_destroy(stream_idx);
-        stream_idx = NULL;
+	if (stream_idx) {
+		idx_traverse(stream_idx, close_streamstore, NULL);
+		idx_destroy(stream_idx);
+		stream_idx = NULL;
+	}
 
-        cfgstate = CFG_PRE; //is this correct?
+        cfgstate = CFG_PRE;
         pthread_mutex_unlock(&cfg_lock);
         pthread_mutex_destroy(&cfg_lock);
 
@@ -1472,8 +1493,6 @@ static const char *usage(struct ldmsd_plugin *self)
 		;
 }
 
-
-
 static struct ldmsd_store stream_csv_store = {
 	.base = {
 			.name = "stream_csv_store",
@@ -1493,15 +1512,13 @@ struct ldmsd_plugin *get_plugin(ldmsd_msg_log_f pf)
 static void __attribute__ ((constructor)) stream_csv_store_init();
 static void stream_csv_store_init()
 {
-        stream_idx = idx_create();
 	pthread_mutex_init(&cfg_lock, NULL);
 }
 
 static void __attribute__ ((destructor)) stream_csv_store_fini(void);
 static void stream_csv_store_fini()
 {
-        pthread_mutex_destroy(&cfg_lock);
-        idx_destroy(stream_idx);
+	term(NULL);
         if (rothread_used){
                 void * dontcare = NULL;
                 pthread_cancel(rothread);
@@ -1512,6 +1529,5 @@ static void stream_csv_store_fini()
                 pthread_cancel(flthread);
                 pthread_join(flthread, &dontcare);
         }
-        stream_idx = NULL;
-
+        pthread_mutex_destroy(&cfg_lock);
 }

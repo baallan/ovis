@@ -73,7 +73,7 @@ wake at rollover seconds after midnight (>=0) and roll, then repeat every rollag
 .TP
 rollover=<rollover>
 .br
-Rollover value controls the frequency of rollover (e.g., number of bytes, number of records, time interval, seconds after midnight). Note that these values are estimates.
+Rollover value controls the frequency of rollover (e.g., number of bytes, number of records, time interval, seconds after midnight). Note that these values are estimates due to the nature of thread wake-ups. Also, for rolltypes 3 and 4, there is a minimum delay of 5 seconds between rollovers no matter how fast the data is being received, which may lead to larger than expected data files for small values of rollover.
 .RE
 
 .SH JSON FORMAT AND OUTPUT HEADER AND FORMAT
