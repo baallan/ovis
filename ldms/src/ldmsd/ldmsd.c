@@ -394,6 +394,7 @@ void cleanup(int x, const char *reason)
 	}
 
 	av_free(auth_opt);
+	auth_opt = NULL;
 	exit(x);
 }
 
@@ -1863,6 +1864,7 @@ int main(int argc, char *argv[])
 		if (plug_name)
 			free(plug_name);
 		av_free(auth_opt);
+		auth_opt = NULL;
 		exit(0);
 	}
 
@@ -1892,6 +1894,7 @@ int main(int argc, char *argv[])
 		ldmsd_log(LDMSD_LCRITICAL, "LDMS could not pre-allocate "
 				"the memory of size %s.\n", max_mem_sz_str);
 		av_free(auth_opt);
+		auth_opt = NULL;
 		exit(1);
 	}
 
@@ -1917,6 +1920,7 @@ int main(int argc, char *argv[])
 			if (!pidfile) {
 				ldmsd_log(LDMSD_LERROR, "Out of memory\n");
 				av_free(auth_opt);
+				auth_opt = NULL;
 				exit(1);
 			}
 		}
@@ -1942,6 +1946,7 @@ int main(int argc, char *argv[])
 			if (!bannerfile) {
 				ldmsd_log(LDMSD_LCRITICAL, "Memory allocation failure.\n");
 				av_free(auth_opt);
+				auth_opt = NULL;
 				exit(1);
 			}
 			sprintf(bannerfile, "%s%s", pidfile, suffix);
@@ -1983,18 +1988,21 @@ int main(int argc, char *argv[])
 	if (!ev_count) {
 		ldmsd_log(LDMSD_LCRITICAL, "Memory allocation failure.\n");
 		av_free(auth_opt);
+		auth_opt = NULL;
 		exit(1);
 	}
 	ovis_scheduler = calloc(ev_thread_count, sizeof(*ovis_scheduler));
 	if (!ovis_scheduler) {
 		ldmsd_log(LDMSD_LCRITICAL, "Memory allocation failure.\n");
 		av_free(auth_opt);
+		auth_opt = NULL;
 		exit(1);
 	}
 	ev_thread = calloc(ev_thread_count, sizeof(pthread_t));
 	if (!ev_thread) {
 		ldmsd_log(LDMSD_LCRITICAL, "Memory allocation failure.\n");
 		av_free(auth_opt);
+		auth_opt = NULL;
 		exit(1);
 	}
 	for (op = 0; op < ev_thread_count; op++) {
