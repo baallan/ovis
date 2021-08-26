@@ -91,7 +91,7 @@ void usage(int argc, char **argv)
 	exit(1);
 }
 
-static const char *short_opts = "h:p:s:x:a:A:f:t:";
+static const char *short_opts = "h:p:s:x:a:A:f:t:c";
 
 #define AUTH_OPT_MAX 128
 
@@ -168,6 +168,12 @@ ldms_t setup_connection(const char *xprt, const char *host,
 	return ldms;
 }
 
+void teardown_connection(ldms_t ldms)
+{
+	ldms_xprt_close(ldms);
+	ldms_xprt_put(ldms);
+}
+
 int main(int argc, char **argv)
 {
 	char *host = NULL;
@@ -185,6 +191,7 @@ int main(int argc, char **argv)
 	struct attr_value_list *auth_opt = NULL;
 	const int auth_opt_max = AUTH_OPT_MAX;
 	int rc;
+	int close_requested = 0;
 
 	auth_opt = av_new(auth_opt_max);
 	if (!auth_opt) {
@@ -226,6 +233,9 @@ int main(int argc, char **argv)
 		case 'f':
 			fname = strdup(optarg);
 			break;
+		case 'c':
+			close_requested = 1;
+			break;
 		case 's':
 			stream = strdup(optarg);
 			break;
@@ -260,13 +270,22 @@ int main(int argc, char **argv)
 		printf("Error setting up connection -- exiting\n");
 		exit(1);
 	}
+	ldms_xprt_get(ldms);
 
 
+	int cnt = 0;
 	while (fgets(buf, STRLEN, fd) != NULL){
+		cnt++;
 		rc = ldmsd_stream_publish(ldms, stream, type, buf, strlen(buf) + 1);
 		if (rc)
 			printf("Error %d publishing data.\n", rc);
+		else
+			printf("Published data %d.\n", cnt);
+		if (feof(fd))
+			break;
 	}
+	if (close_requested)
+		teardown_connection(ldms);
 
 
 	printf("Done\n");

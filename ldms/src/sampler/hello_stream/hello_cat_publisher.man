@@ -46,9 +46,13 @@ Name of the stream (this will be used for subscribing)
 .br
 Optional data-format. Either 'str' or 'json'. Default is str.
 .TP
--t <filename>
+-f <filename>
 .br
 Optional filename. Default is stdin.
+.TP
+-c
+.br
+Explicitly close the connection before exiting, instead of letting process death handle it.
 .RE
 
 .SH BUGS
