@@ -1,0 +1,22 @@
+{
+   init_fork
+   drd:MutexErr
+   fun:pthread_mutex_init_intercept
+   fun:pthread_mutex_init
+   fun:init_atfork
+   fun:fork
+   fun:daemon
+   fun:main
+}
+{
+   ldmsd_inband_cfg_mask_get__access_control
+   drd:ConflictingAccess
+   fun:ldmsd_inband_cfg_mask_get
+   fun:*
+}
+{
+   log_printf
+   drd:ConflictingAccess
+   fun:__GI_mempcpy
+   fun:*
+}
