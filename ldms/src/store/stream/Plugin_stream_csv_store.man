@@ -37,6 +37,10 @@ stream=<stream_a,stream_b>
 .br
 csv list of streams to which to subscribe.
 .TP
+timestamp=<0,1>
+.br
+append a column for the arrival time of data at the store plugin to CSV if 1. Default 0.
+.TP
 flushtime=<N>
 .br
 Flush any file that has not received data on its stream in the last N sec. This is asynchonous to any buffering or rollover that is occuring. Min time if enabled = 120 sec. This will occur again at this interval if there is still no data received.
@@ -73,7 +77,8 @@ wake at rollover seconds after midnight (>=0) and roll, then repeat every rollag
 .TP
 rollover=<rollover>
 .br
-Rollover value controls the frequency of rollover (e.g., number of bytes, number of records, time interval, seconds after midnight). Note that these values are estimates due to the nature of thread wake-ups. Also, for rolltypes 3 and 4, there is a minimum delay of ROLL_LIMIT_INTERVAL seconds between rollovers no matter how fast the data is being received, which may lead to larger than expected data files for small values of rollover.
+Rollover value controls the frequency of rollover (e.g., number of bytes, number of records, time interval, seconds after midnight). Note that these values are estimates due to the nature of thread wake-ups. 
+Also, for rolltypes 3 and 4, there is a minimum delay between rollovers no matter how fast the data is being received, which may lead to larger than expected data files for small values of rollover.
 .RE
 
 .SH JSON FORMAT AND OUTPUT HEADER AND FORMAT

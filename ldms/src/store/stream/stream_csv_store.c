@@ -81,9 +81,6 @@
  */
 
 
-//user changes these in the code before build, for now
-//timestamp store only for json lines, not text
-#define TIMESTAMP_STORE
 #define CB_MSG_LOG 50000
 
 #ifndef ARRAY_SIZE
@@ -149,6 +146,7 @@ static int flthread_used = 0;
 static char* root_path = NULL;
 static char* container = NULL;
 static int buffer = 1;
+static int arrive_timestamp = 0;
 static pthread_mutex_t cfg_lock; /* seralizes config args and stream_idx */
 
 static idx_t stream_idx;
@@ -469,9 +467,9 @@ static int _get_header_from_data(struct linedata *dataline, json_entity_t e){
                                              dataline->dictkey[i]);
 		}
 	}
-#ifdef TIMESTAMP_STORE
-	jb = jbuf_append_str(jb, ",store_recv_time");
-#endif
+	if (arrive_timestamp)
+		jb = jbuf_append_str(jb, ",store_recv_time");
+
         dataline->header = strdup(jb->buf);
         if (!dataline->header) return ENOMEM;
         jbuf_free(jb);
@@ -590,13 +588,12 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
 	//for each dict, write a separate line in the file
 	//if header has no list or an empty list, just write the singletons
 	if (dataline->nlist == 0){
-#ifdef TIMESTAMP_STORE
-		rc = fprintf(stream_handle->file, "%s,%f\n", jbs->buf,
-                        (tv_prev->tv_sec + tv_prev->tv_usec/1000000.0));
-#else
-		rc = fprintf(stream_handle->file, "%s\n", jbs->buf);
+		if (arrive_timestamp)
+			rc = fprintf(stream_handle->file, "%s,%lu.%06lu\n", jbs->buf,
+				tv_prev->tv_sec, tv_prev->tv_usec);
+		else
+			rc = fprintf(stream_handle->file, "%s\n", jbs->buf);
 
-#endif
 		jbuf_free(jbs);
                 stream_handle->byte_count += rc;
                 stream_handle->store_count++; /** stream_cb has the lock, so
@@ -616,12 +613,11 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
 		for (i = 0; i < dataline->ndict-1; i++){
 			jbs = jbuf_append_str(jbs, ",");
 		}
-#ifdef TIMESTAMP_STORE
-		rc = fprintf(stream_handle->file, "%s,%f\n", jbs->buf,
-                        (tv_prev->tv_sec + tv_prev->tv_usec/1000000.0));
-#else
-		rc = fprintf(stream_handle->file, "%s\n", jbs->buf);
-#endif
+		if (arrive_timestamp)
+			rc = fprintf(stream_handle->file, "%s,%lu.%06lu\n", jbs->buf,
+				tv_prev->tv_sec , tv_prev->tv_usec);
+		else
+			rc = fprintf(stream_handle->file, "%s\n", jbs->buf);
 		jbuf_free(jbs);
                 stream_handle->byte_count += rc;
                 stream_handle->store_count++; /** stream_cb has the lock, so
@@ -646,12 +642,11 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
 		for (i = 0; i < dataline->ndict-1; i++){
 			jbs = jbuf_append_str(jbs, ",");
 		}
-#ifdef TIMESTAMP_STORE
-		rc = fprintf(stream_handle->file, "%s,%f\n", jbs->buf,
-                        (tv_prev->tv_sec + tv_prev->tv_usec/1000000.0));
-#else
-		rc = fprintf(stream_handle->file, "%s\n", jbs->buf);
-#endif
+		if (arrive_timestamp)
+			rc = fprintf(stream_handle->file, "%s,%lu.%06lu\n", jbs->buf,
+				tv_prev->tv_sec, tv_prev->tv_usec);
+		else
+			rc = fprintf(stream_handle->file, "%s\n", jbs->buf);
 		jbuf_free(jbs);
                 stream_handle->byte_count += rc;
                 stream_handle->store_count++; /** stream_cb has the lock, so
@@ -696,12 +691,11 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
 				jb = jbuf_append_str(jb, ",");
 			}
 		}
-#ifdef TIMESTAMP_STORE
-		rc = fprintf(stream_handle->file, "%s,%f\n", jb->buf,
-                        (tv_prev->tv_sec + tv_prev->tv_usec/1000000.0));
-#else
-		rc = fprintf(stream_handle->file, "%s\n", jb->buf);
-#endif
+		if (arrive_timestamp)
+			rc = fprintf(stream_handle->file, "%s,%lu.%06lu\n", jb->buf,
+				tv_prev->tv_sec, tv_prev->tv_usec);
+		else
+			rc = fprintf(stream_handle->file, "%s\n", jb->buf);
                 jbuf_free(jb);
                 stream_handle->byte_count += rc;
                 stream_handle->store_count++; /** stream_cb has the lock, so
@@ -709,7 +703,6 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
                                                   this is going on. */
 	}
 	jbuf_free(jbs);
-
 out:
         msglog(LDMSD_LDEBUG, PNAME ": message processed. store_count = %d\n",
                stream_handle->store_count);
@@ -771,11 +764,10 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
             overall shutdown, plus want to be able to do the callback on
             independent streams at the same time */
 
-
-#ifdef TIMESTAMP_STORE
-	gettimeofday(&tv_prev, 0);
-        gottime = 1;
-#endif
+	if (arrive_timestamp) {
+		gettimeofday(&tv_prev, 0);
+		gottime = 1;
+	}
         //also get the time if flushtime is set
         if (flushtime > 0){
                 if (!gottime) gettimeofday(&tv_prev, 0);
@@ -797,14 +789,12 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
 
 	if (stream_type == LDMSD_STREAM_STRING){
                 /** note that the string might have a newline as part of it */
-#ifdef TIMESTAMP_STORE
-                rc = fprintf(stream_handle->file, "%s,%f\n",
-                             msg,
-                             tv_prev.tv_sec + tv_prev.tv_usec/1000000.0);
-#else
-                rc = fprintf(stream_handle->file, "%s\n", msg);
-#endif
-                stream_handle->byte_count+= rc;
+		if (arrive_timestamp)
+			rc = fprintf(stream_handle->file, "%s,%lu.%06lu\n", msg,
+                             tv_prev.tv_sec, tv_prev.tv_usec);
+		else
+			rc = fprintf(stream_handle->file, "%s\n", msg);
+                stream_handle->byte_count += rc;
                 stream_handle->store_count++;
 
                 if (!buffer){
@@ -1252,6 +1242,13 @@ static int config(struct ldmsd_plugin *self,
                        PNAME ": should have empty stream_idx\n");
                 return -1;
         }
+	s = av_value(avl, "timestamp");
+	if (s){
+		arrive_timestamp = atoi(s);
+		msglog(LDMSD_LDEBUG, PNAME
+			": setting data arrival timestamp output to '%d' from %s\n",
+			arrive_timestamp, s);
+	}
 
 	s = av_value(avl, "buffer");
 	if (s){
@@ -1353,6 +1350,11 @@ static int config(struct ldmsd_plugin *self,
                         goto err;
                 }
 
+		if (rolltype == 1 && rollover < MIN_ROLL_1) {
+			msglog(LDMSD_LWARNING, PNAME
+				": rollover %d will be rounded up to %d\n",
+				rollover, MIN_ROLL_1);
+		}
                 if (rolltype == MAXROLLTYPE){
                         s = av_value(avl,"rollagain");
                         if (s){
@@ -1485,8 +1487,6 @@ static const char *usage(struct ldmsd_plugin *self)
                 "\n"
 		;
 }
-
-
 
 static struct ldmsd_store stream_csv_store = {
 	.base = {
