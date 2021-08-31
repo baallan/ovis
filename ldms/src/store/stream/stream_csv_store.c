@@ -145,7 +145,7 @@ static int flthread_used = 0;
 
 static char* root_path = NULL;
 static char* container = NULL;
-static int buffer = 1;
+static int buffer;
 static int arrive_timestamp = 0;
 static pthread_mutex_t cfg_lock; /* seralizes config args and stream_idx */
 
@@ -1237,6 +1237,7 @@ static int config(struct ldmsd_plugin *self,
                 pthread_mutex_unlock(&cfg_lock);
                 return -1;
         }
+	buffer = 1;
         if (!stream_idx){
                 msglog(LDMSD_LERROR,
                        PNAME ": should have empty stream_idx\n");
@@ -1452,7 +1453,6 @@ static void term(struct ldmsd_plugin *self)
 	root_path = NULL;
 	free(container);
 	container = NULL;
-        buffer = 1;
         rolltype = DEFAULT_ROLLTYPE;
         rollover = 0;
         rollagain = 0;
