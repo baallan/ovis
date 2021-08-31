@@ -1448,7 +1448,17 @@ out:
 
 static void term(struct ldmsd_plugin *self)
 {
-
+        if (rothread_used){
+                void * dontcare = NULL;
+                pthread_cancel(rothread);
+                pthread_join(rothread, &dontcare);
+        }
+        if (flthread_used){
+                void * dontcare = NULL;
+                pthread_cancel(flthread);
+                pthread_join(flthread, &dontcare);
+        }
+	/* now that extra threads are done, deallocate data they may use */
         pthread_mutex_lock(&cfg_lock);
         free(root_path);
 	root_path = NULL;
@@ -1515,18 +1525,7 @@ static void stream_csv_store_init()
 static void __attribute__ ((destructor)) stream_csv_store_fini(void);
 static void stream_csv_store_fini()
 {
-
         term(NULL);
-        if (rothread_used){
-                void * dontcare = NULL;
-                pthread_cancel(rothread);
-                pthread_join(rothread, &dontcare);
-        }
-        if (flthread_used){
-                void * dontcare = NULL;
-                pthread_cancel(flthread);
-                pthread_join(flthread, &dontcare);
-        }
         pthread_mutex_destroy(&cfg_lock);
 
 }
