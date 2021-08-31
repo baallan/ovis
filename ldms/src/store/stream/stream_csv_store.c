@@ -1460,6 +1460,12 @@ static void term(struct ldmsd_plugin *self)
         }
 	/* now that extra threads are done, deallocate data they may use */
         pthread_mutex_lock(&cfg_lock);
+        if (stream_idx){
+                idx_traverse(stream_idx, close_stream_handle, NULL);
+                idx_destroy(stream_idx);
+                stream_idx = NULL;
+        }
+
         free(root_path);
 	root_path = NULL;
 	free(container);
@@ -1469,15 +1475,8 @@ static void term(struct ldmsd_plugin *self)
         rollagain = 0;
         flushtime = 0;
 
-        if (stream_idx){
-                idx_traverse(stream_idx, close_stream_handle, NULL);
-                idx_destroy(stream_idx);
-                stream_idx = NULL;
-        }
-
         cfgstate = CFG_PRE;
         pthread_mutex_unlock(&cfg_lock);
-        pthread_mutex_destroy(&cfg_lock);
 
 	return;
 }
