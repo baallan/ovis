@@ -184,6 +184,7 @@ struct csv_stream_handle{
         int64_t byte_count; //for the roll. Cumulative since last roll
         struct timeval tlastrcv; //for the flush.
         struct linedata dataline; //used to keep track of keys for the header
+	ldmsd_stream_client_t client; /* callback & close handle */
         pthread_mutex_t lock;
 };
 
@@ -229,10 +230,12 @@ static void close_stream_handle(void *obj, void *cb_arg){
         struct csv_stream_handle *stream_handle =
                 (struct csv_stream_handle *)obj;
 
+        /* stream unsubscribe */
+	if (stream_handle->client)
+		ldmsd_stream_close(stream_handle->client);
+	stream_handle->client = NULL;
+
         pthread_mutex_lock(&stream_handle->lock);
-
-        //need a stream unsubscribe!
-
         msglog(LDMSD_LDEBUG, PNAME ": Closing stream store <%s>\n",
                stream_handle->stream);
 
@@ -717,7 +720,7 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
 		     json_entity_t e) {
 
 	static uint64_t msg_count = 0;
-        struct csv_stream_handle* stream_handle;
+        struct csv_stream_handle* stream_handle = ctxt;
         struct timeval tv_prev;
         int gottime = 0;
 	int rc = 0;
@@ -750,21 +753,12 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
                 return -1;
         }
 
-        pthread_mutex_lock(&cfg_lock); /** lock needed for clean shutdown */
-        stream_handle = idx_find(stream_idx, (void *)skey, strlen(skey));
         if (!stream_handle){
-                msglog(LDMSD_LERROR,
-                       PNAME ": No stream_store for '%s'\n", skey);
-                pthread_mutex_unlock(&cfg_lock);
+                msglog(LDMSD_LERROR, PNAME ": No stream_store for '%s'\n", skey);
                 return -1;
-
         }
 
 	pthread_mutex_lock(&stream_handle->lock);
-        pthread_mutex_unlock(&cfg_lock);
-        /** currently releasing this, since the only way to destroy is in the
-            overall shutdown, plus want to be able to do the callback on
-            independent streams at the same time */
 
 	if (arrive_timestamp) {
 		gettimeofday(&tv_prev, 0);
@@ -923,8 +917,6 @@ static int open_streamstore(char* stream){
                 goto err1;
         }
 
-       	pthread_mutex_init(&stream_handle->lock, NULL);
-	pthread_mutex_lock(&stream_handle->lock);
 
         //swap
         stream_handle->file = tmp_file;
@@ -935,9 +927,12 @@ static int open_streamstore(char* stream){
                 goto err1;
         }
 
+	msglog(LDMSD_LDEBUG, PNAME ": subscribing to stream '%s'\n", stream);
+	/* handle now completely ready before subscribing or indexing. */
+       	pthread_mutex_init(&stream_handle->lock, NULL);
+	stream_handle->client = ldmsd_stream_subscribe(stream, stream_cb, stream_handle);
         idx_add(stream_idx, (void *)stream, strlen(stream), stream_handle);
 
-	pthread_mutex_unlock(&stream_handle->lock);
 
 	goto out;
 
@@ -1406,24 +1401,11 @@ static int config(struct ldmsd_plugin *self,
                        PNAME ": setting default flush time to %d\n", flushtime);
         }
 
-
-        //subscribe to each one
-        templist = strdup(streamlist);
-        if (!templist){
-                rc = ENOMEM;
-                goto out;
-        }
-        pch = strtok_r(templist, ",", &saveptr);
-        while (pch != NULL){
-                msglog(LDMSD_LDEBUG,
-                       PNAME ": subscribing to stream '%s'\n", pch);
-                ldmsd_stream_subscribe(pch, stream_cb, self);
-                pch = strtok_r(NULL, ",", &saveptr);
-	}
         goto out;
 
 err:
-        //delete any created streamstores
+        //delete any created streamstores. flush and rollover threads are not running
+        //if we got here.
         rolltype = DEFAULT_ROLLTYPE;
         rollover = 0;
         flushtime = 0;
@@ -1460,7 +1442,7 @@ static void term(struct ldmsd_plugin *self)
                 pthread_cancel(flthread);
                 pthread_join(flthread, &dontcare);
         }
-	/* now that extra threads are done, deallocate data they may use */
+	/* now that our extra threads are done, deallocate data they may use */
         pthread_mutex_lock(&cfg_lock);
         if (stream_idx){
                 idx_traverse(stream_idx, close_stream_handle, NULL);
