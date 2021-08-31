@@ -211,6 +211,9 @@ static void _clear_key_info(struct linedata* dataline){
 		free(dataline->dictkey[i]);
 		dataline->dictkey[i] = NULL;
 	}
+	free(dataline->dictkey);
+	dataline->dictkey = NULL;
+
 	dataline->ndict = 0;
 	dataline->nheaderkey = 0;
         free(dataline->header);
