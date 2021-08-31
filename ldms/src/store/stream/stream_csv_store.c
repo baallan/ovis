@@ -220,18 +220,14 @@ static void _clear_key_info(struct linedata* dataline){
         dataline->header = NULL;
 }
 
-static void close_streamstore(void *obj, void *cb_arg){
+/* caller must be holding cfg_lock */
+static void close_stream_handle(void *obj, void *cb_arg){
 
+	(void)cb_arg;
         if (!obj) return;
 
-        pthread_mutex_lock(&cfg_lock);
         struct csv_stream_handle *stream_handle =
                 (struct csv_stream_handle *)obj;
-
-        if (!stream_handle) {
-                pthread_mutex_unlock(&cfg_lock);
-                return;
-        }
 
         pthread_mutex_lock(&stream_handle->lock);
 
@@ -262,9 +258,7 @@ static void close_streamstore(void *obj, void *cb_arg){
 
         pthread_mutex_unlock(&stream_handle->lock);
         pthread_mutex_destroy(&stream_handle->lock);
-
-
-        pthread_mutex_unlock(&cfg_lock);
+	free(stream_handle);
 
         return;
 }
@@ -1427,7 +1421,7 @@ err:
         rolltype = DEFAULT_ROLLTYPE;
         rollover = 0;
         flushtime = 0;
-        idx_traverse(stream_idx, close_streamstore, NULL);
+        idx_traverse(stream_idx, close_stream_handle, NULL);
         idx_destroy(stream_idx);
         stream_idx = idx_create();
 
@@ -1462,7 +1456,7 @@ static void term(struct ldmsd_plugin *self)
         flushtime = 0;
 
         if (stream_idx){
-                idx_traverse(stream_idx, close_streamstore, NULL);
+                idx_traverse(stream_idx, close_stream_handle, NULL);
                 idx_destroy(stream_idx);
                 stream_idx = NULL;
         }
