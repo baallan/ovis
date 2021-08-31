@@ -701,8 +701,10 @@ static int _print_data_lines(struct csv_stream_handle *stream_handle,
 	}
 	jbuf_free(jbs);
 out:
+#ifdef STREAM_CSV_DEBUG
         msglog(LDMSD_LDEBUG, PNAME ": message processed. store_count = %d\n",
                stream_handle->store_count);
+#endif
 
 
 	return 0;
@@ -720,14 +722,16 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
         int gottime = 0;
 	int rc = 0;
 
-
         /** diagnostics logging */
 
+#ifdef STREAM_CSV_DEBUG
         msglog(LDMSD_LDEBUG,
                PNAME ": Calling stream_cb. msg_count %d on stream '%s'\n",
                msg_count, ldmsd_stream_client_name(c));
+#endif
 
 	msg_count += 1;
+#ifdef STREAM_CSV_DEBUG
 	if (0 == (msg_count % CB_MSG_LOG)) {
                 extern struct rbt *msg_tree;
                 time_t t = time(NULL);
@@ -735,6 +739,7 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
                        "timestamp %ld msg_tree %ld msg_count %lu\n",
                        t, msg_tree->card, msg_count);
 	}
+#endif
 
 
         // don't need to check the cfgstate. if you've subscribed, it's ok
@@ -846,7 +851,6 @@ out:
 	pthread_mutex_unlock(&stream_handle->lock);
 	return rc;
 }
-
 
 static int open_streamstore(char* stream){
         struct csv_stream_handle *stream_handle;
