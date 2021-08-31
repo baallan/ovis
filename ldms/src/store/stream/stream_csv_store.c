@@ -1232,17 +1232,19 @@ static int config(struct ldmsd_plugin *self,
 	int rc;
 
 	pthread_mutex_lock(&cfg_lock);
-        //only call once. cannot reset state from subscribe.
+        //only allowed once.
         if (cfgstate != CFG_PRE){
                 msglog(LDMSD_LDEBUG, PNAME ": cannot call config again\n");
-                pthread_mutex_unlock(&cfg_lock);
-                return -1;
+                rc = EINVAL;
+		goto out;
         }
 	buffer = 1;
         if (!stream_idx){
                 msglog(LDMSD_LERROR,
                        PNAME ": should have empty stream_idx\n");
-                return -1;
+                pthread_mutex_unlock(&cfg_lock);
+                rc = ENOMEM;
+		goto out;
         }
 	s = av_value(avl, "timestamp");
 	if (s){
