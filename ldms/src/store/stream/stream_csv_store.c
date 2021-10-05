@@ -187,8 +187,8 @@ struct csv_stream_handle{
         int64_t byte_count; //for the roll. Cumulative since last roll
         struct timeval tlastrcv; //for the flush.
         struct linedata dataline; //used to keep track of keys for the header
-        ldmsd_stream_client_t client; //subscribe/unsubscribe
-        pthread_mutex_t lock;
+        pthread_mutex_t lock; /* protects items above, not client below. */
+        ldmsd_stream_client_t client; //subscribe/unsubscribe handle cached
 };
 
 
@@ -235,14 +235,15 @@ static void close_streamstore(void *obj, void *cb_arg){
                 return;
         }
 
-        pthread_mutex_lock(&stream_handle->lock);
-        msglog(LDMSD_LDEBUG, PNAME ": Closing stream store <%s>\n",
-               stream_handle->stream);
-
         /* unsubscribe */
         if (stream_handle->client)
                 ldmsd_stream_close(stream_handle->client);
         stream_handle->client = NULL;
+
+        pthread_mutex_lock(&stream_handle->lock);
+        msglog(LDMSD_LDEBUG, PNAME ": Closing stream store <%s>\n",
+               stream_handle->stream);
+
 
         if (stream_handle->file) {
                 fflush(stream_handle->file);
@@ -730,7 +731,7 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
 		     const char *msg, size_t msg_len,
 		     json_entity_t e) {
 
-        struct csv_stream_handle* stream_handle;
+        struct csv_stream_handle* stream_handle = ctxt;
         struct timeval tv_prev;
         int gottime = 0;
 	int rc = 0;
@@ -763,21 +764,14 @@ static int stream_cb(ldmsd_stream_client_t c, void *ctxt,
                 return -1;
         }
 
-        pthread_mutex_lock(&cfg_lock); /** lock needed for clean shutdown */
-        stream_handle = idx_find(stream_idx, (void *)skey, strlen(skey));
         if (!stream_handle){
                 msglog(LDMSD_LERROR,
                        PNAME ": No stream_store for '%s'\n", skey);
-                pthread_mutex_unlock(&cfg_lock);
                 return -1;
 
         }
 
 	pthread_mutex_lock(&stream_handle->lock);
-        pthread_mutex_unlock(&cfg_lock);
-        /** currently releasing this, since the only way to destroy is in the
-            overall shutdown, plus want to be able to do the callback on
-            independent streams at the same time */
 
 
 #ifdef TIMESTAMP_STORE
@@ -940,7 +934,6 @@ static int open_streamstore(char* stream){
         }
 
        	pthread_mutex_init(&stream_handle->lock, NULL);
-	pthread_mutex_lock(&stream_handle->lock);
 
         //swap
         stream_handle->file = tmp_file;
@@ -955,7 +948,6 @@ static int open_streamstore(char* stream){
         msglog(LDMSD_LDEBUG, PNAME ": subscribing to stream '%s'\n", stream);
         stream_handle->client = ldmsd_stream_subscribe(stream, stream_cb, stream_handle);
         idx_add(stream_idx, (void *)stream, strlen(stream), stream_handle);
-	pthread_mutex_unlock(&stream_handle->lock);
 
 	goto out;
 
@@ -1412,24 +1404,7 @@ static int config(struct ldmsd_plugin *self,
         }
 
 
-        /*
-
-        //subscribe to each one
-        templist = strdup(streamlist);
-        if (!templist){
-                rc = ENOMEM;
-                goto out;
-        }
-        pch = strtok_r(templist, ",", &saveptr);
-        while (pch != NULL){
-                msglog(LDMSD_LDEBUG,
-                       PNAME ": subscribing to stream '%s'\n", pch);
-                ldmsd_stream_subscribe(pch, stream_cb, self);
-                pch = strtok_r(NULL, ",", &saveptr);
-	}
-        */
-
-        goto out;
+       goto out;
 
 
 err:
