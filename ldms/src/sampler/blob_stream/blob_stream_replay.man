@@ -1,0 +1,140 @@
+.\" Manpage for blob_stream_replay
+.\" Contact ovis-help@ca.sandia.gov to correct errors or typos.
+.TH man 8 "8 Aug 2022" "v4" "LDMS blob_stream_replay man page"
+
+.SH NAME
+blob_stream_replay
+
+
+.SH SYNOPSIS
+Read blob_stream data files and republish them to the given target.
+.br
+blob_stream_replay [options] <data files>
+
+.SH DESCRIPTION
+This utility replays stream data, reading from blob_stream plugin output.
+Replay publishing can be at the maximum rate possible, on a
+variety of synthetic schedules, at the original intervals between
+message deliveries to the store if the original store included the timing,
+or at the original intervals determined from data fields parsed out of the message data.
+For parallel-sourced data, parallel replay can be achieved using
+task rank data parsed from the message data. A sub-range of time can be
+specified to replay a slice of the data files.
+
+.SH DATA FILES
+Only the primary data files
+(names with pattern stream.DAT.timestamp) should be given. Additional
+input file names such as stream.OFFSET.timestamp and stream.TIMING.timestamp
+will be automatically derived where needed.
+
+For schedule options where original timing data is used, file names
+will be sorted by timestamp before reading and file lists including multiple
+stream names with overlapping time ranges will be replayed correctly.
+
+.SH General options
+
+.TP
+.BR -d
+Run in debug mode.
+.TP
+.BR -h
+Dump a help message.
+.TP
+.BI "-m, --mem" " GB"
+Run with maximum memory for pending messages of GB gigabytes buffering. When reading input files, reading will pause until messages are published to free up buffered messages. The default (0) will assume unlimited memory is available. On systems where memory is a shared or limited resource, -m allows the user to be polite or the program feasible.
+.TP
+.BI "-T, --timestamp" " IDENTIFIER"
+Use the field IDENTIFIER as the original time rather than message reception time from the store. The identifier must be found in the outermost and leading fields of the message, not in or after any nested object. The field must have a timestamp value of the format (seconds since the epoch)[.(optional_subseconds)].
+.TP
+.BI "-l, --loop" " N"
+Repeat the entire replay process N times. If N is 0, repeat forever.
+.TP
+.BR "-V, --version"
+Dump the version information including state of MPI support.
+
+.SH Destination
+.TP
+.BI "-h, --host" " HOST"
+Specify hostname of ldmsd listener. Default localhost.
+.TP
+.BI "-p, --port" " NUM"
+Specify port of ldmsd listener. Default 411.
+.TP
+.BI "-x, --xprt" " XPRT"
+Specify transport type of ldmsd listening port. Default sock. Others: rdma, ugni.
+.TP
+.BI "-a, --auth" " AUTH"
+Specify authentication type of ldmsd listening port. Default 'none'. See ldms_authentication(7).
+.TP
+.BI "-A" " CONFLIST"
+Specify authentication CONFLIST options if needed by -a choice. See ldms_authentication(7).
+
+.SH Scheduling
+All schedule options may be filtered. The -T option changes what is considered 'original time'
+for these options.
+For parallel-sourced data, parallel replay can be achieved using the -r option.
+
+.TP
+.BR "-s, --schedule " max
+Read and publish messages as fast as possible.
+This case ignores original timestamp data if present and publishes messages in the order
+found in the files.
+.TP
+.BR "-s, --schedule " rate:MSG_PER_SEC
+This case computes an interval from messages per second given and sends out messages at that interval.
+This case ignores time stamp data even if present and publishes messages in the order
+found in the files.
+.TP
+.BR "-s, --schedule " relative
+Compute the relative time interval between messages based on original time data.
+.TP
+.BR "-s, --schedule " scale:FACTOR
+Compute the relative time interval between messages based on original time data and then
+scale it by FACTOR. FACTOR must be a positive floating point number.
+A FACTOR less than 1.0 compresses time and greater than 1.0 stretches time.
+
+
+.SH Filtering
+.SS
+Parallelism
+.TP
+.BI "-r, --rank" " IDENTIFIER:NUM[,NUM]*"
+Only messages matching IDENTIFIER with a value matching one of the NUM values will be replayed. The identifier must be found in the outermost and leading fields of the message, not in or after any nested object. NUM values must be integer.
+.TP
+.BI "-r, --rank" " IDENTIFIER"
+If the program has been compiled with MPI support, only messages matching IDENTIFIER with a value matching MPI_Comm_rank(MPI_COMM_WORLD)
+will be replayed. The identifier must be found in the outermost and leading fields of the message, not in or after any nested object.
+
+.SS
+Time
+.TP
+.BI "-t, --time " " BEGIN:END"
+Exclude messages with original time outside the seconds range BEGIN - END. BEGIN and END are both integer seconds since the epoch.
+.TP
+.BI "-R, --relative " " BEGIN:END"
+Exclude messages with relative time outside the seconds range BEGIN - END. BEGIN and END are both integer seconds since
+the earliest time found in the data.
+
+.SH NOTES
+.PP
+This reader is in development may emit messages about unimplemented features.
+.PP
+The stream names used in publication are taken from the filenames.
+
+.SH EXAMPLES
+W
+.PP
+X
+.nf
+y
+.fi
+W
+.PP
+X
+.nf
+Y
+.fi
+
+
+.SH SEE ALSO
+ldmsd(8), Plugin_blob_stream_writer(7)
