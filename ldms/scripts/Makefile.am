@@ -9,6 +9,7 @@ EXTRA_DIST += ldms-reverse-conf.sh
 if ENABLE_SCRIPTS
 sbin_SCRIPTS= ldms-wrapper
 bin_SCRIPTS = lsdate
+bin_SCRIPTS += gen-ldms-configs-from-genders
 bin_SCRIPTS += ldms-static-test.sh
 bin_SCRIPTS += ldms-reverse-conf.sh
 bin_SCRIPTS += ovis-roll-over.py

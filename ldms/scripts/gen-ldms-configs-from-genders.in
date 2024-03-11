@@ -1,0 +1,82 @@
+#! /bin/bash
+# usage $0 VARIANT HOST [LAUNCH]
+#	VARIANT is something like 'local' or 'agg' (%I in systemd)
+#	HOST is the host config files are wanted for.
+# e.g. ssh attaway-login7
+# - follow the instructions below, then
+# LDMS_install/bin/gen-ldms-configs-from-genders local attaway-login7
+# diff -r /var/run/ldmsd ~/ldms-genders-config/attaway-login7/var/run/ldmsd
+#
+# below:
+#  instprefix should be set to the installation of an ldms build from
+#     Ben's branch with configuration including --enable-libgenders --enable-genderssystemd
+#  ${I} is replacment for %I in systemd service filex.
+# README:
+# clone ben's branch
+# git clone git@github.com:baallan/ovis.git ovis-genders-transition
+# cd ovis-genders-transition
+# git checkout gender_localize
+# ./autogen.sh
+# ./packaging/make-all-top.sh
+# # fix up the default systemd files to point to the global ones (if you want to reproduce them)
+# cd LDMS_install/share/doc/ovis-ldms/sample_init_scripts/genders/systemd/etc/sysconfig/ldms.d
+# for i in ClusterGenders ldmsd.local.conf ldmsd.agg.conf debug plugins-conf; do
+#	mv $i $i.default
+# 	ln -s /etc/sysconfig/ldms.d/$i .
+# done
+
+#
+I=$1
+testhost=$2
+mylaunch=$3
+if test "x$USER" = "xroot"; then
+	echo dont run this as root.
+	exit 1
+fi
+instprefix=@prefix@
+outprefix=$HOME/ldms-genders-config/$testhost
+PIDFile=$outprefix/var/run/ldmsd/ldmsd-${I}.pid
+export LOCALSTATEDIR=$outprefix/var
+export SYSCONFDIR=$instprefix/share/doc/ovis-ldms/sample_init_scripts/genders/systemd/etc
+if ! test -x $instprefix/bin/ldmsd-pre-systemd; then
+	echo missing $instprefix/bin/ldmsd-pre-systemd. instprefix set right?
+	exit 1
+fi
+
+mkdir -p $outprefix/var/run/ldmsd
+if ! test -d $outprefix/var/run/ldmsd; then
+	echo cannot make $outprefix/var. outprefix set right?
+	exit 2
+fi
+
+/bin/rm -f $outprefix/var/run/ldmsd/ldmsd.env.${I}
+$instprefix/bin/ldmsd-pre-systemd ${I} $outprefix/var/run/ldmsd/ldmsd.env.${I}
+if ! test $outprefix/var/run/ldmsd/ldmsd.env.${I} -nt $instprefix/bin/ldmsd-pre-systemd; then
+	echo did not make $outprefix/var/run/ldmsd/ldmsd.env.${I} successfully
+	exit 3
+fi
+
+. $outprefix/var/run/ldmsd/ldmsd.env.${I}
+
+echo "output in $outprefix"
+# Start daemon
+# This is all one line so it is easily converted to sysvinit, not so
+# it is easy to read.
+if test "x$mylaunch" != "x"; then
+	echo LAUNCHING
+	/bin/rm -f $LDMSD_SOCKPATH && \
+	$instprefix/bin/ldmsd-wrapper.sh ${I} \
+		$LDMSD_GLOBAL_OPTS \
+		$MEM_OPT $LDMSAGGD_MEM_RES \
+		-c $LDMSD_PLUGIN_CONFIG_FILE \
+		-a $LDMS_AUTH_TYPE $LDMS_AUTH_ARGS \
+		-r $PIDFile \
+		-x $LDMSD_XPRT:$LDMSD_PORT \
+		-P $LDMSD_EVENT_THDS \
+		$LDMSD_INET_OPT \
+		$LDMSD_CONFIG_PORT \
+		$LDMSD_SOCK_OPT \
+		$LDMSD_SOCKPATH \
+		-v $LDMSD_DBG $LDMS_LOG_OPT $LDMS_LOG_FILE
+fi
+echo done. output in $outprefix

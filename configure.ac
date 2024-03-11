@@ -1131,6 +1131,7 @@ AC_CONFIG_FILES([
 	util/sample_init_scripts/genders/sysv/etc/init.d/ldmsd.template
 	util/sample_init_scripts/genders/sysv/ldmsd-pre-sysvinit
 	ldms/scripts/ldms-wrapper
+	ldms/scripts/gen-ldms-configs-from-genders
 	ldms/scripts/ldms-static-test.sh
 	ldms/scripts/pll-ldms-static-test.sh
 	ldms/scripts/ldms_ban.sh

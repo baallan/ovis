@@ -2,8 +2,16 @@
 # so logic needing the second semantics is bypassed for now.
 STRGPMATCHHOSTS=/bin/false
 
-sysconfdir=@sysconfdir@
-localstatedir=@localstatedir@
+if test -z $SYSCONFDIR; then
+	sysconfdir=@sysconfdir@
+else
+	sysconfdir=$SYSCONFDIR
+fi
+if test -z $LOCALSTATEDIR; then
+	localstatedir=@localstatedir@
+else
+	localstatedir=$LOCALSTATEDIR
+fi
 if test "x$LDMSCLUSTER" = "local"; then
 	LTAG="ldmsd"
 else

@@ -1,5 +1,5 @@
 #!/bin/bash -x
-echo "$0 `date`" >> .last-make
+echo "$0 `date` $(hostname) $(cat /etc/redhat-release)" >> .last-make
 eventname=libevent-2.0.21-stable
 export LOCALEVENT=0 ; # else expect /usr to be a good libevent2
 # we build libevent once, then reinstall it as first built if
@@ -43,7 +43,7 @@ if test -f ldms/src/sampler/meminfo/meminfo.c; then
 	cd $build_subdir
 	expected_ovislib_prefix=$prefix
 	expected_sos_prefix=/badsos
-	allconfig="--prefix=$prefix --enable-rdma --enable-ssl --disable-sos --disable-perfevent --enable-zap --enable-zaptest --enable-sysclassib --enable-ibnet --enable-jobid"
+	allconfig="--prefix=$prefix --enable-rdma --enable-ssl --disable-sos --disable-perfevent --enable-zap --enable-zaptest --enable-sysclassib --enable-ibnet --enable-jobid --disable-slingshot --enable-libgenders --enable-genderssystemd"
 	../configure $allconfig && \
 	make && \
 	make install && \

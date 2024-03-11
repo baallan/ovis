@@ -19,8 +19,16 @@ export exec_prefix=@exec_prefix@
 export sbindir=@sbindir@
 export bindir=@bindir@
 export libdir=@libdir@
-export localstatedir=@localstatedir@
-export sysconfdir=@sysconfdir@
+if test -z $SYSCONFDIR; then
+        sysconfdir=@sysconfdir@
+else
+        sysconfdir=$SYSCONFDIR
+fi
+if test -z $LOCALSTATEDIR; then
+        localstatedir=@localstatedir@
+else
+        localstatedir=$LOCALSTATEDIR
+fi
 export pythondir=@pythondir@
 export libevent2_libdir=@libeventpath@
 

@@ -3,7 +3,16 @@ prefix=@prefix@
 exec_prefix=@exec_prefix@
 libdir=@libdir@
 sbindir=@sbindir@
-localstatedir=@localstatedir@
+if test -z $SYSCONFDIR; then
+        sysconfdir=@sysconfdir@
+else
+        sysconfdir=$SYSCONFDIR
+fi
+if test -z $LOCALSTATEDIR; then
+        localstatedir=@localstatedir@
+else
+        localstatedir=$LOCALSTATEDIR
+fi
 
 export LD_LIBRARY_PATH=$libdir:/usr/lib:$LD_LIBRARY_PATH
 mkdir -p $localstatedir/run/ldmsd/tmp
