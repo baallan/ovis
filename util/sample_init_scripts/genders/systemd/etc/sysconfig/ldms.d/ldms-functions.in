@@ -26,7 +26,7 @@ fi
 
 # dump where we called from and exit with argument given
 dietrace () {
-	if systemd-cat --help 2>1 > /dev/null; then
+	if systemd-cat --help 2>&1 > /dev/null; then
 		OUTLINE="systemd-cat -p err -t backtrace"
 	else
 		OUTLINE="logger -t $LTAG -p syslog.err"
@@ -247,7 +247,7 @@ check_genders_file() {
 	done
 	x=$($NODEATTR $naf -n -A |grep ^ldmsd)
 	y=$($NODEATTR $naf -n -A |grep ^ldmsaggd)
-	z=$($NODEATTR $naf -n -A |grep ^${LDMS_HOSTNAME}$)
+	z=$($NODEATTR $naf -n -A |grep ^${host}$)
 	if test -n "$x" -o -n "$y"; then
 		logger -t $LTAG -p syslog.err "Found ldms genders without hostnames: $x $y."
 		((n++))
@@ -255,10 +255,10 @@ check_genders_file() {
 	if test "$1" = "0"; then
 		# This test only applies for the local genders config, not upstream ones.
 		if test -z "$z"; then
-			logger -t $LTAG -p syslog.err "self-genders: Found no genders at all found for $LDMS_HOSTNAME (self)."
-			logger -t $LTAG -p syslog.err "self-genders: Review $af or setting of LDMS_HOSTNAME or aliasing in /etc/hosts"
+			logger -t $LTAG -p syslog.err "self-genders: Found no genders at all found for $host (self?)."
+			logger -t $LTAG -p syslog.err "self-genders: Review $af or setting of LDMS_GENDERS_HOST or aliasing in /etc/hosts"
 			logger -t $LTAG -p syslog.err "self-genders: Insufficient input was created from $lgi"
-			logger -t $LTAG -p syslog.err "self-genders: $NODEATTR $naf -n -A |grep ^${LDMS_HOSTNAME}$)"
+			logger -t $LTAG -p syslog.err "self-genders: $NODEATTR $naf -n -A |grep ^${host}$)"
 			exit 1
 			((n++))
 		fi
@@ -818,11 +818,11 @@ start_add_hosts () {
 		aflist="$aflist -g $ATTRFILE2"
 	fi
 	if test "$DEBUG" = "yes"; then
-		$LDMSCTL_ARGS -n $LDMS_HOSTNAME $aflist -v 1
+		$LDMSCTL_ARGS -n $host $aflist -v 1
 	fi
 	# actually do it.
-	echo "# aggregator config args computed with $LDMSCTL_ARGS -n $LDMS_HOSTNAME $aflist" >> $out
-	$LDMSCTL_ARGS -n $LDMS_HOSTNAME $aflist >> $out
+	echo "# aggregator config args computed with $LDMSCTL_ARGS -n $host $aflist" >> $out
+	$LDMSCTL_ARGS -n $host $aflist >> $out
 	echo "# " >> $out
 	echo "# end aggregation section" >> $out
 	echo "# " >> $out

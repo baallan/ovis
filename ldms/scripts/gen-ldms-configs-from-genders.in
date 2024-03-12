@@ -20,10 +20,13 @@
 # ./packaging/make-all-top.sh
 # # fix up the default systemd files to point to the global ones (if you want to reproduce them)
 # cd LDMS_install/share/doc/ovis-ldms/sample_init_scripts/genders/systemd/etc/sysconfig/ldms.d
-# for i in ClusterGenders ldmsd.local.conf ldmsd.agg.conf debug plugins-conf; do
-#	mv $i $i.default
-# 	ln -s /etc/sysconfig/ldms.d/$i .
-# done
+x_myexample="
+for i in ClusterGenders ldmsd.local.conf ldmsd.agg.conf debug plugins-conf; do
+	mv -f $i $i.default
+	cp -ar /etc/sysconfig/ldms.d/$i .
+done
+"
+# there's a setting in ldmsd.*.conf for LDMS_LOG_PATH or ClusterGenders/genders.$cluster.agg, comment it out
 
 #
 I=$1
@@ -36,6 +39,7 @@ fi
 instprefix=@prefix@
 outprefix=$HOME/ldms-genders-config/$testhost
 PIDFile=$outprefix/var/run/ldmsd/ldmsd-${I}.pid
+export LDMS_GENDERS_HOST=$testhost
 export LOCALSTATEDIR=$outprefix/var
 export SYSCONFDIR=$instprefix/share/doc/ovis-ldms/sample_init_scripts/genders/systemd/etc
 if ! test -x $instprefix/bin/ldmsd-pre-systemd; then

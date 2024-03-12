@@ -67,7 +67,6 @@ else
         hostfull=`hostname`
 fi
 host="$( echo $hostfull | cut -d "." -f1 )"
-LDMS_HOSTNAME=$host
 export host hostfull
 
 if ! test -f $libdir/ovis-lib-configvars.sh; then
@@ -123,7 +122,7 @@ if [ $RETVAL -eq 0 ]; then
 	fi
 	export CNAME NIDNUM NODENUM NODETYPE ARIES IS_PHI
 else
-	hostnumber="$(echo $LDMS_HOSTNAME | sed 's/[a-z\-]//g' | sed 's/^0*//g')"
+	hostnumber="$(echo $host | sed 's/[a-z\-]//g' | sed 's/^0*//g')"
 	if [ -z $hostnumber ]; then
 		echoq "WARNING: $host (no digits in hostname?)"
 		hostnumber=0
@@ -452,12 +451,12 @@ if ! test -x $LDMSCTL_ARGS; then
 fi
 if test "$DEBUG" = "yes"; then
 	# log some noise
-	$LDMSCTL_ARGS -n $LDMS_HOSTNAME -t store-list -v 1
+	$LDMSCTL_ARGS -n $host -t store-list -v 1
 fi
 
 if test -z "$LDMSD_SCHEMA_LIST"; then
 	# query entire gender hierarchy recursively for schemas in use anywhere.
-	LDMSD_SCHEMA_LIST=`$LDMSCTL_ARGS -n $LDMS_HOSTNAME -t store-list 2>/dev/null`
+	LDMSD_SCHEMA_LIST=`$LDMSCTL_ARGS -n $host -t store-list 2>/dev/null`
 fi
 LDMSD_ALL_SCHEMA=`echo $LDMSD_SCHEMA_LIST | tr ",: " "\n" | sort -u`
 
