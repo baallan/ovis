@@ -979,6 +979,7 @@ static void update_set_data(struct json_cfg_inst *inst,
 		entry = container_of(rbn, struct schema_entry, rbn);
 	}
 
+	int dump_once = 1;
 	for (json_attr = json_attr_first(entity); json_attr;
 	     json_attr = json_attr_next(json_attr)) {
 
@@ -987,7 +988,19 @@ static void update_set_data(struct json_cfg_inst *inst,
 		enum json_value_e type = json_entity_type(json_attr_value(json_attr));
 		rbn = rbt_find(&entry->attr_tree, name);
 		if (!rbn) {
-			LERROR("Could not find attribute entry for '%s'\n", name);
+			LERROR("Could not find attribute entry for '%s' in schema %s\n", name, schema_name);
+			if (dump_once) {
+				dump_once = 0;
+				jbuf_t djb = json_entity_dump(NULL, entity);
+				if (djb) {
+					LERROR("json entity is: %s\n", djb->buf);
+					jbuf_free(djb);
+				} else {
+					LERROR("json dump failed\n");
+				}
+			} else {
+				LERROR("already dumped\n");
+			}
 			continue;
 		}
 		struct attr_entry *ae = container_of(rbn, struct attr_entry, rbn);
