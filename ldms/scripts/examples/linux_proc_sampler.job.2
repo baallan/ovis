@@ -23,4 +23,3 @@ config name=store_csv path=${STOREDIR} altheader=0
 strgp_add name=store_${testname} plugin=store_csv schema=linux_proc_sampler container=node
 strgp_prdcr_add name=store_${testname} regex=.*
 strgp_start name=store_${testname}
-

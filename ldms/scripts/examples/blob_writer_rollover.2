@@ -1,5 +1,5 @@
 load name=blob_stream_writer plugin=blob_stream_writer
-config name=blob_stream_writer path=${STOREDIR} container=blobs stream=slurm timing=1 types=1 spool=1
+config name=blob_stream_writer path=${STOREDIR} container=blobs stream=slurm timing=1 types=1 spool=1 rolltype=3 rollover=10
 
 prdcr_add name=localhost1 host=${HOST} type=active xprt=${XPRT} port=${port1} reconnect_interval=2000000
 prdcr_subscribe regex=.* stream=slurm
@@ -15,4 +15,3 @@ updtr_start name=allhosts
 # strgp_add name=store_${testname} plugin=store_csv schema=${dstat_schema} container=node
 # strgp_prdcr_add name=store_${testname} regex=.*
 # strgp_start name=store_${testname}
-
