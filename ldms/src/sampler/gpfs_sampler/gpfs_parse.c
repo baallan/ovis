@@ -1,5 +1,6 @@
 #ifndef gpfs_parse_h
 #define gpfs_parse_h
+
 /* -*- c-basic-offset: 8 -*-
  * Copyright (c) 2021 National Technology & Engineering Solutions
  * of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with
@@ -68,72 +69,164 @@
 #include "ldmsd.h"
 #include "sampler_base.h"
 #include "gpfs.h"
-
 #include <pthread.h>
 
 #ifndef ARRAY_SIZE
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*a))
 #endif
 
+/*struct Gpfs
+{
+        char *node,*name,*prod_name,*job_id,*comp_id,*timestamp,*cluster,
+                *filesystem,*disks,*bytes_read,*bytes_written,*opens,
+                *closes,*reads,*writes,*read_dir,*inode_updates;
+        ldms_set_t set;
+} Gpfs;
+*/
+struct nlist {
+        struct nlist *next;
+        char *name;
+        char *def;
+};
+
+#define HASHSIZE 101
+#define FLAGSIZE 12
+static struct nlist *hashtable[HASHSIZE];
+static char* start_flags[FLAGSIZE];
+static char* def_flags[FLAGSIZE];
+
 #define SAMP "gpfs"
+static int metric_offset;
+static base_data_t base;
 
 
-char *gpfs_set(char *buffer) {
+/*LDMS return function*/
+
+
+/*Dictionary Functions. Creates, sets, hashes, and looks up definitions.*/
+unsigned hash(char *s)
+{
+        unsigned hashval;
+        for (hashval = 0; *s != '\0'; s++)
+                hashval = *s +31 * hashval;
+        return hashval % HASHSIZE;
+}
+
+struct nlist *lookup(char *s)
+{
+        struct nlist *np;
+        for (np = hashtable[hash(s)]; np != NULL; np = np->next)
+                if (strcmp(s, np->name) == 0)
+                        return np;
+        return NULL;
+}
+
+char *gpfs_strdup(const char *);
+
+struct nlist *dict_put(char *name, char *def)
+{
+        struct nlist *np;
+        unsigned hashval;
+        if ((np = lookup(name)) == NULL) {
+                np = (struct nlist *) malloc(sizeof(*np));
+                if (np == NULL || (np->name = strdup(name)) == NULL)
+                        return NULL;
+                hashval = hash(name);
+                np->next = hashtable[hashval];
+                hashtable[hashval] = np;
+        } else
+                free((void *)np->def);
+        if ((np->def = strdup(def)) == NULL)
+                return NULL;
+        return np;
+}
+
+char *gpfs_strdup(const char *s)
+{
+        char *r = NULL;
+        if(s != NULL)
+        {
+                const size_t size = strlen(s)+1;
+                if((r = malloc(size)) != NULL)
+                        memcpy(r, s, size);
+                }
+        return r;
+}
+
+
+struct Gpfs gpfs_set(char *buffer, struct Gpfs gpfs) {
+        char* end_flags[] = {"_ "};
         int i = 0;
         int ARRAY_SIZE=100;
         char** args = (char**)malloc(ARRAY_SIZE*sizeof(char*));
-        char data = [1024];
+	
 
 	char* token = strtok(buffer, " \t");
-
 	for (int k = 0; token != NULL; k++) {
 		args[k] = strdup(token);
                 token = strtok(NULL, " \t");
                 switch(k){
-			case 5  : {
-				data[i] = args[k];
+                	  case 5  : {
+				gpfs.name = args[k];
 				break;
 			} case 9  :  {
-				data[i] = args[k];
+				gpfs.cluster = args[k];
 				break;
 			} case 11 : {
-				data[i] = args[k];
+				gpfs.filesystem = args[k];
 				break;
 			} case 13 : {
-				data[i] = args[k];
+				gpfs.disks = args[k];
 				break;
 			} case 15 : {
-                                data[i] = args[k];
+                                gpfs.timestamp = args[k];
                                 break;
 			} case 18 : {
-				data[i] = args[k];
+				gpfs.bytes_read = args[k];
 				break;
 			} case 21 : {
-				data[i] = args[k];
+				gpfs.bytes_written = args[k];
 				break;
 		        } case 23 : {
-				data[i] = args[k];
+				gpfs.opens = args[k];
 				break;
 			} case 25 : {
-				data[i] = args[k];
+				gpfs.closes = args[k];
 				break;
 			} case 27 : {
-				data[i] = args[k];
+				gpfs.reads = args[k];
 				break;
 			} case 29 : {
-				data[i] = args[k];
+				gpfs.writes = args[k];
 				break;
 			} case 31 : {
-				data[i] = args[k];
+				gpfs.read_dir = args[k];
 				break;
 			} case 34 :  {
-				data[i] = args[k];
+				gpfs.inode_updates = args[k];
 				break;
 			}
                 }
-                i++;
-	}
+	}	
 
-        return data;
+        return gpfs;
+}
+
+
+int main (void) {
+
+        char buffer[500];
+        struct Gpfs gpfs;
+	char temp[500];
+        while(fgets(buffer, 500, stdin) != NULL)
+        {
+		strcat(temp," ");
+		strcat(temp,buffer);
+        }
+	gpfs = gpfs_set(temp,gpfs);
+        printf("%s\n",gpfs.name);
+
+        return 0;
+
 }
 #endif
