@@ -124,9 +124,9 @@ TESTDIR=$2
 
 if test -z "$2"; then
 	if test -n "LDMSNET"; then
-		TESTSUFF="-$LDMSNET"
+		TESTSUFF=".$LDMSNET"
 	fi
-	TESTDIR=`pwd`/ldmstest/$testname/$SLURM_JOBID.$SLURM_CLUSTER_NAME.$SLURM_JOB_NUM_NODES$TESTSUFF
+	TESTDIR=`pwd`/ldmstest/$testname/$SLURM_JOBID.$SLURM_CLUSTER_NAME.nodes-$SLURM_JOB_NUM_NODES.tasks-$SLURM_NTASKS$TESTSUFF
 fi
 export TESTDIR
 
