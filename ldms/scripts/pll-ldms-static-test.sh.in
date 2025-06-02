@@ -226,7 +226,7 @@ function DAEMONS {
 			return
 		fi
 
-		/bin/rm -f ${LOGDIR}/$i.txt ${LOGDIR}/vg.$i ${LOGDIR}/teardown.$i.txt ${LOGDIR}/$i.stdio
+		/bin/rm -f ${LOGDIR}/log.$i.txt ${LOGDIR}/vg.$i ${LOGDIR}/teardown.$i.txt ${LOGDIR}/std.$i.io
 		binname=ldmsd.${ports[$i]}
 		pkill -9 $binname
 		/bin/rm -f $LDMSD_RUN/$binname
@@ -367,17 +367,17 @@ function LDMSD {
 			echo $wrap ldmsd.${ports[$i]} \
 				-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 				-c $LDMSD_RUN/conf.$i \
-				-l ${LOGDIR}/$i.txt \
+				-l ${LOGDIR}/log.$i.txt \
 				-v DEBUG $LDMSD_EXTRA \
 				-r $LDMSD_PIDFILE.$i \
-				"2>&1 > ${LOGDIR}/$i.stdio &" > $LDMSD_RUN/start.$i
+				"2>&1 > ${LOGDIR}/std.$i.io &" > $LDMSD_RUN/start.$i
 			$wrap ldmsd.${ports[$i]} \
 				-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 				-c $LDMSD_RUN/conf.$i \
-				-l ${LOGDIR}/$i.txt \
+				-l ${LOGDIR}/log.$i.txt \
 				-v DEBUG $LDMSD_EXTRA \
 				-r $LDMSD_PIDFILE.$i \
-				2>&1 > ${LOGDIR}/$i.stdio &
+				2>&1 > ${LOGDIR}/std.$i.io &
 		else
 			if test -f $clonefile -a $cloneinput = "1"; then
 				cp $clonefile $LDMSD_RUN/conf.$i
@@ -387,33 +387,33 @@ function LDMSD {
 				echo $wrap ldmsd.${ports[$i]} \
 					-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-c $LDMSD_RUN/conf.$i \
-					-l ${LOGDIR}/$i.txt \
+					-l ${LOGDIR}/log.$i.txt \
 					-v DEBUG $LDMSD_EXTRA \
 					-r $LDMSD_PIDFILE.$i \
-					"2>&1 > ${LOGDIR}/$i.stdio &" \
+					"2>&1 > ${LOGDIR}/std.$i.io &" \
 					> $LDMSD_RUN/start.$i
 				$wrap ldmsd.${ports[$i]} \
 					-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-c $LDMSD_RUN/conf.$i \
-					-l ${LOGDIR}/$i.txt \
+					-l ${LOGDIR}/log.$i.txt \
 					-v DEBUG $LDMSD_EXTRA \
 					-r $LDMSD_PIDFILE.$i \
-					2>&1 > ${LOGDIR}/$i.stdio &
+					2>&1 > ${LOGDIR}/std.$i.io &
 			else
 				echo $myproc: IDLE DAEMON $i
 				env > $LDMSD_RUN/env.$i
 				echo "#" > $LDMSD_RUN/revconf.$i
 				echo ldmsd.${ports[$i]} -x ${XPRT}:${ports[$i]}${XPRTHOST} \
-					-l ${LOGDIR}/$i.txt \
+					-l ${LOGDIR}/log.$i.txt \
 					-v DEBUG \
 					-r $LDMSD_PIDFILE.$i \
-					"2>&1 > ${LOGDIR}/$i.stdio &" \
+					"2>&1 > ${LOGDIR}/std.$i.io &" \
 					> $LDMSD_RUN/start.$i
 				ldmsd.${ports[$i]} -x ${XPRT}:${ports[$i]}${XPRTHOST} \
-					-l ${LOGDIR}/$i.txt \
+					-l ${LOGDIR}/log.$i.txt \
 					-v DEBUG \
 					-r $LDMSD_PIDFILE.$i \
-					2>&1 > ${LOGDIR}/$i.stdio &
+					2>&1 > ${LOGDIR}/std.$i.io &
 			fi
 		fi
 		# assume gnu sleep and bc exist, because usleep deprecated

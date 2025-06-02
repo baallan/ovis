@@ -402,13 +402,17 @@ GENERATED FILES
    | The valgrind log for the kth daemon with PID %p or the valgrind log
      for ldms_ls of the kth daemon with PID %p, if valgrind is active.
 
-*$test_dir/logs/$k.txt*
+*$test_dir/logs/log.$k.txt*
    |
    | The log for the kth daemon.
 
 *$test_dir/logs/teardown.$k.txt*
    |
    | The teardown log for the kth daemon.
+
+*$test_dir/logs/std.$k.io*
+   |
+   | The stdout/stderr for the kth daemon.
 
 *$test_dir/run/conf.$k*
    |
