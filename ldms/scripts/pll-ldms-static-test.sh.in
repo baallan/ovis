@@ -68,9 +68,29 @@ if test "$1" = "-l"; then
 	exit 0
 fi
 if test "$1" = "-b"; then
-	# >&2 echo "Canned test batch script for $2 should be:"
-	echo "$exdir/examples/slurm-test/sbatch.$2"
-	exit 0
+	shift
+	input=""
+	# check for unqualified name
+	if test $(basename $1) = $1 -a ! -f $1; then
+		if test -f $exdir/examples/slurm-test/sbatch.$1; then
+			input=$exdir/examples/slurm-test/sbatch.$1
+		fi
+	else
+		dname=$(dirname $1)
+		bname=$(basename $1)
+		sbname=$dname/sbatch.$bname
+		if test -f $sbname; then
+			input=$sbname
+		fi
+	fi
+	# >&2 echo "Canned test batch script for $1 should be:"
+	if test -n $input; then
+		echo "$input"
+		exit 0
+	else
+		echo "sbatch file not found for $1"
+		exit 1
+	fi
 fi
 if test $(basename $1) = $1 -a ! -f $1; then
 	if test -f $exdir/examples/slurm-test/$1; then
