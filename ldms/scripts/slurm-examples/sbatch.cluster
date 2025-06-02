@@ -111,6 +111,7 @@ function make_hostlists {
 	echo "SCHEDULE workers= $workers"
 	echo "SCHEDULE management= $management"
 	echo "declare -a hosts" > $TEST_HOSTFILE
+	echo "declare -a least_sampler" > $TEST_HOSTFILE
 	/bin/rm -f $SLURM_HOSTFILE $TEST_HOSTFILE $TEST_HOSTFILE.array
 	k=0
 	for i in $management; do
@@ -137,28 +138,40 @@ function make_hostlists {
 	k=0
 	for i in $management; do
 		echo "hosts[$((k + 1))]=$i$HOST_SUFFIX" >> $TEST_HOSTFILE.array
+		# there is no daemon 0,
+		echo "least_sampler[$((k + 1))]=0" >> $TEST_HOSTFILE.array
 		((k++))
 		if test $k -ge $SLURM_NTASKS; then
 			break
 		fi
 	done
+	firstworkers=1
 	for i in $(seq $wstart $SLURM_NTASKS); do
 		for j in $workers; do
 			echo "hosts[$((k + 1))]=$j$HOST_SUFFIX" >> $TEST_HOSTFILE.array
+			if test $firstworkers = "1"; then
+				echo "least_sampler[$((k + 1))]=1" >> $TEST_HOSTFILE.array
+			else
+				echo "least_sampler[$((k + 1))]=0" >> $TEST_HOSTFILE.array
+			fi
 			((k++))
 			if test $k -ge $SLURM_NTASKS; then
 				break
 			fi
 		done
+		firstworkers=0
 		if test $k -ge $SLURM_NTASKS; then
 			break
 		fi
 	done
 	echo "export hosts" >> $TEST_HOSTFILE.array
 	echo loading env $TEST_HOSTFILE
+	echo loading env $TEST_HOSTFILE
 	. $TEST_HOSTFILE
 	export LDMS_DAEMON_ARRAY_FILE=$TEST_HOSTFILE.array
 }
 
 make_hostlists $AGG_COUNT
+echo "more outputs in $PARENT_DIR"
+echo "slurm input/outputs in $slurmdir"
 srun -n $SLURM_NTASKS --overcommit  --cpu-bind=none --distribution=arbitrary --output=$slurmdir/slurm-%j-%t.out pll-ldms-static-test.sh $TEST_NAME $PARENT_DIR

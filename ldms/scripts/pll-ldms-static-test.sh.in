@@ -459,6 +459,19 @@ function LDMS_LS {
 		$wrap ldms_ls  -h $ihost -x $XPRT -p $iport $*
 	done
 }
+#
+
+function LDMS_CPU_GRIND {
+	if test "$bypass" = "1"; then
+		return 0
+	fi
+	if test "$least_sampler[$myproc]" = "1"; then
+		ihost=${hosts[$i]}
+		echo "$myproc: <$ihost> ldms_cpu_grind $*"
+		ldms_cpu_grind $*
+	fi
+}
+
 # FILECNT_LDMSD num list
 function FILECNT_LDMSD {
 	for i in $*; do

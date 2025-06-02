@@ -95,6 +95,11 @@ LDMS_LS <k> [ldms_ls_args]
    |
    | This invokes ldms_ls on the k-th ldmsd.
 
+LDMS_CPU_GRIND [ldms_cpu_grind_args]
+   |
+   | This invokes ldms_cpu_grind appropriately on all nodes
+     that are running samplers.
+
 KILL_LDMSD <daemon-numbers>
    |
    | Kills the listed daemons.
@@ -200,6 +205,13 @@ to the compute nodes:
 | i.TP XPRT=$transport_plugin_name
 | If not set, defaults to sock.
 
+AGG_COUNT=$a
+   |
+   | The number of nodes reserved for daemons, 1 per node.
+     If fewer nodes are allocated in slurm than AGG_COUNT+1, then
+     the first AGG_COUNT daemons are allocated round-robin with
+     the rest of the daemons.
+
 HOST_SUFFIX=$device_suffix
    |
    | If not using sock transport, the string to append to $HOSTNAME to
@@ -223,6 +235,13 @@ hosts[N]
    | Daemon configuration files and commands can refer to ${hosts${i}}
      where N is any value of 'i' described above. hosts[i] is the
      network hostname for the N-th daemon.
+
+least_sampler[N]
+   |
+   | Daemon configuration files and commands can refer to least_sampler[$i]
+     where N is any value of 'i' described above. least_sampler[i] is 1
+     if daemon i is the first daemon with i > AGG_COUNT on the node,
+     or is 0 if not.
 
 The following variables may be set in the script to affect the launch of
 ldmsd or ldms_ls:

@@ -7,6 +7,15 @@ AM_CPPFLAGS = @OVIS_INCLUDE_ABS@
 #COMMON_LIBADD = -lldms @LDFLAGS_GETTIME@ -lovis_util -lcoll
 dist_man8_MANS =
 
+bin_PROGRAMS =
+
+if ENABLE_SCRIPTS
+bin_PROGRAMS += ldms_cpu_grind
+ldms_cpu_grind_SOURCES = ldms_cpu_grind.c
+ldms_cpu_grind_LDADD = -lm
+ldms_cpu_grind_LDFLAGS = $(AM_LDFLAGS) -lpthread
+endif
+
 sbin_PROGRAMS =
 sbin_PROGRAMS += test_ldms_xprt_reconnect
 test_ldms_xprt_reconnect_SOURCES = test_ldms_xprt_reconnect.c
