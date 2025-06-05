@@ -71,6 +71,11 @@ DAEMONS <daemon-numbers>
      task, since Slurm numbers tasks from 0 and this tool numbers tasks
      from 1.
 
+SET_LOG_LEVEL <DEBUG|ERROR|INFO|ALL|QUIET|WARNING|CRITICAL>
+   |
+   | Set the generic log level for daemons started after
+     calling SET_LOG_LEVEL.
+
 FILECNT_LDMSD <daemon-numbers>
    |
    | Collect the list of open files from /proc/self/fd/ and print the
@@ -95,10 +100,12 @@ LDMS_LS <k> [ldms_ls_args]
    |
    | This invokes ldms_ls on the k-th ldmsd.
 
-LDMS_CPU_GRIND [ldms_cpu_grind_args]
+LDMS_CPU_GRIND [-k K] [ldms_cpu_grind_args]
    |
-   | This invokes ldms_cpu_grind appropriately on all nodes
-     that are running samplers.
+   | This invokes or stops ldms_cpu_grind appropriately on all nodes
+     that are running samplers. The load runs until 'LDMS_CPU_GRIND stop'
+     occurs. K grinders are started. If K is not specified with -k, then
+     K matching the number of physical cores detected is used.
 
 KILL_LDMSD <daemon-numbers>
    |
@@ -315,9 +322,15 @@ testname
      files when the name of the input file is the same as the plugin
      tested.
 
+INPUT_DIR
+   |
+   | The directory containing the input file. Additional or
+     replacement bash functions accompanying the input can
+     be loaded as '. $INPUT_DIR/extra_script'.
+
 TESTDIR
    |
-   | Root directory of the testing setup.
+   | Root directory of the testing setup and output.
 
 STOREDIR
    |

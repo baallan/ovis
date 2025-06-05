@@ -26,7 +26,9 @@
 #include <math.h>
 #include <errno.h>
 #include <time.h>
+#include <sys/time.h>
 #include <getopt.h>
+#include <sys/resource.h>
 
 
 // Initialize the array a size nxn with random values
@@ -207,15 +209,27 @@ double ** create_array(int n)
 	return hdr;
 }
 
-int64_t diff_timespec(struct timespec start, struct timespec end)
+// get timespec diff in ns
+int64_t diff_timespec(struct timespec *start, struct timespec *end)
 {
-	int64_t diff_ns = end.tv_nsec - start.tv_nsec;
-	if (diff_ns < 0) {
-		diff_ns += 1000000000L;
-		end.tv_nsec--;
+	struct timespec result = {0,0};
+	result.tv_sec = end->tv_sec - start->tv_sec;
+	result.tv_nsec = end->tv_nsec - start->tv_nsec;
+	if (result.tv_nsec < 0) {
+		--(result.tv_sec);
+		result.tv_nsec += 1000000000;
 	}
-	int64_t diff = (int64_t)(end.tv_sec - start.tv_sec) * 1000000000L + diff_ns;
+	int64_t diff = result.tv_nsec + result.tv_sec * 1000000000;
 	return diff;
+}
+
+// get the timeval diff in ns
+int64_t diff_timeval(struct timeval *start, struct timeval *end)
+{
+	struct timeval d = {0 ,0};
+	timersub(end, start, &d);
+	int64_t diff_ns = d.tv_usec*1000 + d.tv_sec *1000000000;
+	return diff_ns;
 }
 
 #define oom_check(o, n, otype) _oom_check(o, n, #o, otype)
@@ -345,6 +359,7 @@ int main(int argc, char **argv) {
 	initialize_square_array_with_random_values(1, N, a);
 	size_t bytes = 0;
 	struct timespec start, end;
+	struct rusage ustart, uend;
 	clock_gettime(CLOCK_MONOTONIC, &start);
 	int i;
 	if (r == -1) {
@@ -356,6 +371,7 @@ int main(int argc, char **argv) {
 			swap = NULL;
 		}
 	} else {
+		getrusage(RUSAGE_SELF, &ustart);
 		clock_gettime(CLOCK_MONOTONIC, &start);
 		for (i = 0; i < r ; i++) {
 			bytes += f(N, &c, a, vin, vout);
@@ -364,14 +380,21 @@ int main(int argc, char **argv) {
 			vin = swap;
 			swap = NULL;
 		}
+		getrusage(RUSAGE_SELF, &uend);
 		clock_gettime(CLOCK_MONOTONIC, &end);
 
-		int64_t dt_ns = diff_timespec(start, end);
+		int64_t dt_ns = diff_timespec(&start, &end);
+		int64_t dtv_ns = diff_timeval(&ustart.ru_utime, &uend.ru_utime);
+		int64_t sys_dtv_ns = diff_timeval(&ustart.ru_stime, &uend.ru_stime);
 		printf("bytes = %" PRId64 "\n", bytes);
-		printf("dt_ns = %" PRId64 "\n", dt_ns);
-		printf("dt_s = %g\n", dt_ns*1e-9);
+		printf("dtv_ns = %" PRId64 "\n", dtv_ns);
+		printf("dt_user_s = %g\n", dtv_ns*1e-9);
+		printf("dt_sys_s = %g\n", sys_dtv_ns*1e-9);
+		printf("dt_clock_s = %g\n", dt_ns*1e-9);
 		double rate = (double)bytes/1024/1024/1024 / (dt_ns / 1e9);
+		double urate = (double)bytes/1024/1024/1024 / (dtv_ns / 1e9);
 		printf("GB/s = %g\n", rate);
+		printf("(u)GB/s = %g\n", urate);
 	}
 	printf("matrix size (kb) = %g\n", N*N*8.0 / 1024);
 	destroy_vector(vin);

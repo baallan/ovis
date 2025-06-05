@@ -205,6 +205,25 @@ function vgoff {
   usevg=0
 }
 
+log_level_list="DEBUG|ERROR|INFO|ALL|QUIET|WARNING|CRITICAL"
+function SET_LOG_LEVEL {
+
+	lvl=$1
+	case $lvl in
+	DEBUG|ERROR|INFO|ALL|QUIET|WARNING|CRITICAL)
+		;;
+	*)
+		echo unknown log level $1
+		echo expected one of $log_level_list
+		bypass=1
+		return 1
+		;;
+	esac
+	export LOG_LEVEL=$lvl
+	echo "LOG_LEVEL=$LOG_LEVEL"
+	return 0
+}
+
 # clear old daemons in the range we're expected and define the
 # port variables. The ports are defined sequentially.
 # The hosts come from slurm.
@@ -368,14 +387,14 @@ function LDMSD {
 				-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 				-c $LDMSD_RUN/conf.$i \
 				-l ${LOGDIR}/log.$i.txt \
-				-v DEBUG $LDMSD_EXTRA \
+				-v $LOG_LEVEL $LDMSD_EXTRA \
 				-r $LDMSD_PIDFILE.$i \
 				"2>&1 > ${LOGDIR}/std.$i.io &" > $LDMSD_RUN/start.$i
 			$wrap ldmsd.${ports[$i]} \
 				-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 				-c $LDMSD_RUN/conf.$i \
 				-l ${LOGDIR}/log.$i.txt \
-				-v DEBUG $LDMSD_EXTRA \
+				-v $LOG_LEVEL $LDMSD_EXTRA \
 				-r $LDMSD_PIDFILE.$i \
 				2>&1 > ${LOGDIR}/std.$i.io &
 		else
@@ -388,7 +407,7 @@ function LDMSD {
 					-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-c $LDMSD_RUN/conf.$i \
 					-l ${LOGDIR}/log.$i.txt \
-					-v DEBUG $LDMSD_EXTRA \
+					-v $LOG_LEVEL $LDMSD_EXTRA \
 					-r $LDMSD_PIDFILE.$i \
 					"2>&1 > ${LOGDIR}/std.$i.io &" \
 					> $LDMSD_RUN/start.$i
@@ -396,7 +415,7 @@ function LDMSD {
 					-x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-c $LDMSD_RUN/conf.$i \
 					-l ${LOGDIR}/log.$i.txt \
-					-v DEBUG $LDMSD_EXTRA \
+					-v $LOG_LEVEL $LDMSD_EXTRA \
 					-r $LDMSD_PIDFILE.$i \
 					2>&1 > ${LOGDIR}/std.$i.io &
 			else
@@ -405,13 +424,13 @@ function LDMSD {
 				echo "#" > $LDMSD_RUN/revconf.$i
 				echo ldmsd.${ports[$i]} -x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-l ${LOGDIR}/log.$i.txt \
-					-v DEBUG \
+					-v $LOG_LEVEL \
 					-r $LDMSD_PIDFILE.$i \
 					"2>&1 > ${LOGDIR}/std.$i.io &" \
 					> $LDMSD_RUN/start.$i
 				ldmsd.${ports[$i]} -x ${XPRT}:${ports[$i]}${XPRTHOST} \
 					-l ${LOGDIR}/log.$i.txt \
-					-v DEBUG \
+					-v $LOG_LEVEL \
 					-r $LDMSD_PIDFILE.$i \
 					2>&1 > ${LOGDIR}/std.$i.io &
 			fi
@@ -693,6 +712,7 @@ fi
 echo "$myproc: Listing ldmsd's still running:"
 pgrep ldmsd
 echo "$myproc: Done."
+export INPUT_DIR=$(dirname $input)
 echo "$myproc: logs and data stored under $TESTDIR"
 
 . $input
