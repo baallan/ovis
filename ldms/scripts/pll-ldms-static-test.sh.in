@@ -27,6 +27,8 @@ export pkglibdir=${ovis_ldms_pkglibdir}
 export PACKAGE_TARNAME=ovis-ldms
 export docdir=${ovis_ldms_datarootdir}/doc/${PACKAGE_TARNAME}
 export exdir=$docdir
+# default log is debug
+export LOG_LEVEL=DEBUG
 
 if test -z "$ZAP_LIBPATH"; then
 	ZAP_LIBPATH=$ovis_ldms_plugins
@@ -92,10 +94,19 @@ if test "$1" = "-b"; then
 		exit 1
 	fi
 fi
-if test $(basename $1) = $1 -a ! -f $1; then
-	if test -f $exdir/examples/slurm-test/$1; then
-		input=$exdir/examples/slurm-test/$1
+if test $(basename $1) = $1; then
+	# is an unqualified name
+	if ! test -f $1; then
+		# and not in local directory
+		if test -f $exdir/examples/slurm-test/$1; then
+			# and can use the installed input file
+			input=$exdir/examples/slurm-test/$1
+		fi
 	fi
+else
+	echo "pll-ldms-static-test.sh requires an installed case file."
+	echo "Relative input is not supported, although it is for ldms-static-test.sh"
+	exit 1
 fi
 if ! test -f $input -a -r $input; then
 	echo FAIL: cannot read test input $1
@@ -498,16 +509,104 @@ function LDMS_LS {
 		$wrap ldms_ls  -h $ihost -x $XPRT -p $iport $*
 	done
 }
-#
 
-function LDMS_CPU_GRIND {
+function LDMS_LS_WAIT {
+	# wait until all daemons given have been seen to have the schema named present.
+	# LDMS_LS_WAIT schema timeout dameon_number*
+	# timeout is integer seconds to wait for all to appear. 0 or less is infinite wait.
 	if test "$bypass" = "1"; then
 		return 0
 	fi
-	if test "$least_sampler[$myproc]" = "1"; then
-		ihost=${hosts[$i]}
-		echo "$myproc: <$ihost> ldms_cpu_grind $*"
-		ldms_cpu_grind $*
+	schema=$1
+	timeout=$2
+	shift
+	shift
+	declare -a lswait
+	# build target daemon list
+	for i in $*; do
+		lswait[$i]=1
+	done
+	if test $timeout -le 0; then
+		timeout=1000000000
+	fi
+	tend=$(( $(date +%s) + $timeout))
+	while test ${#lswait[@]} -gt 0; do
+		if test $(date +%s) -gt $tend; then
+			break
+		fi
+		echo waiting ${#lswait[@]} daemons
+		for i in ${!lswait[@]}; do
+			if test $(date +%s) -gt $tend; then
+				break
+			fi
+			if test -n "$PORT"; then
+				iport=$PORT
+			else
+				iport=${ports[$i]}
+			fi
+			if ! test -f "$LDMSD_PIDFILE.$i"; then
+				#echo FAIL: $myproc: ls of missing daemon $i skipped. check ${LOGDIR}/$i.txt
+				#bypass=1
+				continue
+			fi
+			ihost=${hosts[$i]}
+			if ldms_ls -x XPRT -p $iport -h $ihost -S $schema -v |grep Tot > /dev/null; then
+				echo found daemon $i
+				unset -v lswait[$i]
+			fi
+		done
+	done
+	if test ${#lswait[@]} -gt 0; then
+		echo "LDMS_LS_WAIT timed out waiting for daemon count: ${#lswait[@]}"
+		bypass=1
+	fi
+}
+#
+function LDMS_CPU_GRIND {
+	# start or stop grinders from local lead daemon
+	# LDMS_CPU_GRIND stop
+	# LDMS_CPU_GRIND [-k K] [workargs]
+	if test "$bypass" = "1"; then
+		return 0
+	fi
+	if test $1 = "stop"; then
+		if test -z $CPU_GRIND_DIR; then
+			return 0
+		fi
+		pflist=$(ls $CPU_GRIND_DIR/ldms_cpu_grind.pids.$myproc.*  2> /dev/null)
+		for i in dummy $pflist; do
+			if test $i = "dummy"; then
+				continue
+			fi
+			tpid=$(cat $i)
+			if test -d /proc/$tpid/fd; then
+				disown $tpid
+				kill -9 $tpid
+			fi
+			/bin/rm $i
+		done
+		return 0
+	fi
+	if test "${least_sampler[$myproc]}" = "1"; then
+		CPU_GRIND_DIR=$TESTDIR/run/grind
+		gpid=$CPU_GRIND_DIR/ldms_cpu_grind.pids.$myproc
+		gargs="-r -1 -p $gpid"
+		ihost=${hosts[$myproc]}
+		MESSAGE " <$ihost> ldms_cpu_grind ${gargs}.\$i $*"
+		if test "x$1" = "x-k" -a -n $2; then
+			pcores=$2
+			shift
+		else
+			# get physical core count
+			nsock=$(lscpu |grep ^Sock |sed -e 's/.*://' -e 's/ //g')
+			ncore=$(lscpu |grep ^Core |sed -e 's/.*://' -e 's/ //g')
+			pcores=$(($nsock * $ncore))
+		fi
+		mkdir -p $CPU_GRIND_DIR
+		touch $CPU_GRIND_DIR/lead.$myproc.tasks_$pcores
+		for i in $(seq $pcores); do
+			ldms_cpu_grind ${gargs}.$i $* &
+		done
 	fi
 }
 

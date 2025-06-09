@@ -58,7 +58,7 @@ esac
 export XPRT
 export HOST_SUFFIX
 
-TEST_NAME=cluster
+TEST_NAME=cluster_checked
 PARENT_DIR=$(pwd)/ldmstest/$TEST_NAME/$SLURM_JOBID.$SLURM_CLUSTER_NAME.nodes-$SLURM_JOB_NUM_NODES.tasks-$SLURM_NTASKS.$LDMSNET
 slurmdir=$PARENT_DIR/slurm
 mkdir -p $slurmdir
@@ -74,7 +74,7 @@ function less1 {
 
 function make_hostlists {
 	if test -z "$AGG_COUNT"; then
-		echo agg_count must be set in the sbatch.cluster script.
+		echo agg_count must be set in the sbatch.$TEST_NAME script.
 		exit 1
 	fi
 
@@ -92,7 +92,6 @@ function make_hostlists {
 		echo "SCHEDULE reserve $AGG_COUNT"
 		# reserve AGG_COUNT nodes for 1 task per node
 		mcount=0
-		set -x
 		for m in $jl; do
 			if test $mcount -lt $AGG_COUNT; then
 				management="$management $m"
@@ -106,7 +105,6 @@ function make_hostlists {
 		done
 		wstart=$(( $AGG_COUNT + 1))
 		workers=$jl
-		set +x
 	fi
 	echo "SCHEDULE workers= $workers"
 	echo "SCHEDULE management= $management"
