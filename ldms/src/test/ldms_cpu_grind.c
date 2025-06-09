@@ -265,7 +265,7 @@ int main(int argc, char **argv) {
 		{0, 0, 0, 0}
 	};
 
-	while ((o = getopt_long(argc, argv, "hn:r:s:m:c:", long_options, NULL)) != -1) {
+	while ((o = getopt_long(argc, argv, "hn:r:s:m:p:c:", long_options, NULL)) != -1) {
 		switch (o) {
 		case 'n':
 			N = atoi(optarg);
