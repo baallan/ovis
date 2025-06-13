@@ -452,6 +452,18 @@ GENERATED FILES
    |
    | The start command of the kth daemon.
 
+*$test_dir/run/grind
+   |
+   | The scratch directory for ldms_cpu_grind pidfiles
+
+*$test_dir/run/grind/lead.$k.tasks_$p
+   |
+   | File identifying task k as having started P ldms_cpu_grind processes.
+
+*$test_dir/run/grind/ldms_cpu_grind.pids.$k.$j
+   |
+   | Pidfile of the j-th grind process started by the k-th slurm task.
+
 *$test_dir/store/*
    |
    | The root of store output locations.
