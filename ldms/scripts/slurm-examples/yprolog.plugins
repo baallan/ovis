@@ -1,0 +1,80 @@
+# define the plugins, which may not be used but might be loaded.
+
+# not generically available and or not self-configuring or require root:
+#filesingle
+#opa2
+#lnet_stats
+#lustre_client
+#lustre_mdc
+#dcgm_sampler
+
+plugins:
+  ${plugname}:
+    name: ${plugname}
+    interval: "1s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${testname}
+      instance: localhost${i}/${testname}
+      component_id: "${i}"
+      perm: "0644"
+      job_set: localhost${i}/jobid
+  meminfo:
+    name: meminfo
+    interval: "1s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${meminfo}
+      instance: localhost${i}/meminfo
+      component_id: "${i}"
+      perm: "0644"
+  procstat:
+    name: procstat
+    interval: "1s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${procstat}
+      instance: localhost${i}/procstat
+      component_id: "${i}"
+      perm: "0644"
+  vmstat:
+    name: vmstat
+    interval: "1s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${vmstat}
+      instance: localhost${i}/vmstat
+      component_id: "${i}"
+      perm: "0644"
+  procnet:
+    name: procnet
+    interval: "1s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${procnet}
+      instance: localhost${i}/procnet
+      component_id: "${i}"
+      perm: "0644"
+  loadavg:
+    name: loadavg
+    interval: "60s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${loadavg}
+      instance: localhost${i}/loadavg
+      component_id: "${i}"
+      perm: "0644"
+  dstat:
+    name: dstat
+    interval: "60s"
+    config:
+    - producer: "localhost${i}"
+      schema: ${dstat}
+      instance: localhost${i}/dstat
+      component_id: "${i}"
+      perm: "0644"
+  store_csv :
+    name : store_csv
+    config :
+    - path: ${STOREDIR}
+      altheader: 0

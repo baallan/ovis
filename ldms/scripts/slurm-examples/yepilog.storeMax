@@ -1,0 +1,45 @@
+# L2 on daemon 1
+# L1 on daemon 2
+# L0 on daemon 3-maxdaemon
+aggregators:
+- daemons: "localhost1"
+  peers:
+  - daemons: "localhost2"
+    endpoints: "localhost2"
+    reconnect: "1.0s"
+    type: active
+    updaters:
+      - mode: pull
+        interval: "1.0s"
+        offset: "100ms"
+        sets:
+          - regex: ".*"
+            field: inst
+- daemons: "localhost2"
+  peers:
+  - daemons: "localhost[3-@maxdaemon@]"
+    endpoints: "localhost[3-@maxdaemon@]"
+    reconnect: "1.0s"
+    type: active
+    updaters:
+      - mode: pull
+        interval: "1.0s"
+        offset: "100ms"
+        sets:
+          - regex: ".*"
+            field: inst
+
+plugins:
+  store_csv :
+    name : store_csv
+    config :
+    - path: ${STOREDIR}
+      altheader: 0
+
+stores:
+  store_${testname}:
+    daemons : "localhost1"
+    plugin : store_csv
+    container : node
+    schema : ${testname}
+    flush : 10s

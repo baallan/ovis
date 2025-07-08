@@ -1,0 +1,10 @@
+daemons:
+- names: "localhost[1-@maxdaemon@]"
+  hosts: "${HOST}"
+  endpoints:
+  - names: "localhost[1-@maxdaemon@]"
+    ports: "[@minport@-@maxport@]"
+    xprt: ${XPRT}
+    auth:
+      name: none
+      plugin: none
