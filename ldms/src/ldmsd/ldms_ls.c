@@ -86,6 +86,9 @@
 static size_t max_mem_size;
 static char *mem_sz;
 
+static long long trace = 0;
+#define TRACE(...) if (trace) trace += printf(__VA_ARGS__ ) + fflush(NULL)
+
 static pthread_mutex_t dir_lock;
 static pthread_cond_t dir_cv;
 static int dir_done;
@@ -142,7 +145,7 @@ void null_log(const char *fmt, ...)
 	fflush(stderr);
 }
 
-#define FMT "h:p:x:w:m:ESIlvua:A:VPd"
+#define FMT "h:p:x:w:m:ESIlvua:A:VPdT"
 void usage(char *argv[])
 {
 	printf("%s -h <hostname> -x <transport> [ name ... ]\n"
@@ -173,6 +176,7 @@ void usage(char *argv[])
 	       , LDMS_LS_MAX_MEM_SZ_STR, LDMS_LS_MEM_SZ_ENVVAR);
 	printf("\n    -V               Print LDMS version and exit.\n");
 	printf("\n    -P               Register for push updates.\n");
+	printf("\n    -T               Output trace lines (likely breaks output parsers).\n");
 	exit(1);
 }
 
@@ -778,22 +782,28 @@ void print_cb(ldms_t t, ldms_set_t s, int rc, void *arg)
 	int err;
 	unsigned long last = (unsigned long)arg;
 	err = LDMS_UPD_ERROR(rc);
+	TRACE("##print_cb entered rc: %d\n", rc);
 	if (err) {
 		printf("    Error %x updating metric set.\n", err);
 		goto out;
 	}
 	/* Ignore if more update of this set is expected */
-	if (rc & LDMS_UPD_F_MORE)
+	if (rc & LDMS_UPD_F_MORE) {
+		TRACE("##print_cb more expected %d\n", rc);
 		return;
+	}
 	/* If this is a push update and it's not the last, ignore it. */
 	if (rc & LDMS_UPD_F_PUSH) {
+		TRACE("##print_cb push %d\n", rc);
 		if (!(rc & LDMS_UPD_F_PUSH_LAST)) {
+			TRACE("##print_cb push cancel %d\n", rc);
 			/* This will trigger the last update */
 			ldms_xprt_cancel_push(s);
 			return;
 		}
 	}
 	if (print_decomp) {
+		TRACE("##print_cb print_decomp\n");
 		char digest_str[LDMS_DIGEST_STR_LENGTH];
 		struct digest_entry *de;
 		struct rbn *rbn;
@@ -835,14 +845,18 @@ void print_cb(ldms_t t, ldms_set_t s, int rc, void *arg)
 		for (i = 0; i < ldms_set_card_get(s); i++)
 			metric_printer(s, i);
 	}
-	if ((rc == 0) || (rc & LDMS_UPD_F_PUSH_LAST))
+	if ((rc == 0) || (rc & LDMS_UPD_F_PUSH_LAST)) {
+		TRACE("##print_cb set delete\n");
 		ldms_set_delete(s);
+	}
  out:
+	TRACE("##print_cb out\n");
 	if (!print_decomp)
 		printf("\n");
 	if (last) {
 		pthread_mutex_lock(&print_lock);
 		print_done = 1;
+		TRACE("##print_cb print_done=1\n");
 		pthread_cond_signal(&print_cv);
 		pthread_mutex_unlock(&print_lock);
 		done = 1;
@@ -863,15 +877,19 @@ void lookup_cb(ldms_t t, enum ldms_lookup_status status,
 	       int more,
 	       ldms_set_t s, void *arg)
 {
+	TRACE("##lookup_cb w/arg %p\n", arg);
 	unsigned long last = (unsigned long)arg;
 	if (status) {
 		last = 1;
 		pthread_mutex_lock(&print_lock);
 		print_done = 1;
+		TRACE("##lookup_cb signaling print_cv on bad in\n");
 		pthread_cond_signal(&print_cv);
 		pthread_mutex_unlock(&print_lock);
+		TRACE("##lookup_cb input status %d\n", (int)status);
 		goto err;
 	}
+	TRACE("##lookup_cb calling ldms_xprt_update with more=%d\n", more);
 	ldms_xprt_update(s, print_cb, (void *)(unsigned long)(!more));
 	return;
  err:
@@ -884,6 +902,7 @@ void lookup_cb(ldms_t t, enum ldms_lookup_status status,
 	if (last && !more) {
 		pthread_mutex_lock(&done_lock);
 		done = 1;
+		TRACE("##lookup_cb signaling done_cv for err\n");
 		pthread_cond_signal(&done_cv);
 		pthread_mutex_unlock(&done_lock);
 	}
@@ -894,7 +913,9 @@ void lookup_push_cb(ldms_t t, enum ldms_lookup_status status,
 		    ldms_set_t s, void *arg)
 {
 	unsigned long last = (unsigned long)arg;
+	TRACE("##lookup_push_cb last=%lu\n", last);
 	if (LDMS_UPD_ERROR(status)) {
+		TRACE("##lookup_push_cb err. print_done = 1 \n");
 		/* Lookup failed, signal the main thread to finish up */
 		last = 1;
 		pthread_mutex_lock(&print_lock);
@@ -1002,12 +1023,17 @@ void __add_dir(ldms_dir_t dir)
 	LIST_INSERT_HEAD(&dir_list, lsdir, entry);
 }
 
+#define DC_LOC_1 (void*)1
+#define DC_LOC_2 (void*)2
+
 void dir_cb(ldms_t t, int status, ldms_dir_t _dir, void *cb_arg)
 {
 	int i;
 	int more;
+	TRACE("##dir_cb w/arg %p\n", cb_arg);
 	if (status) {
 		dir_status = status;
+		TRACE("##dir_cb in status is %d. skipping.\n", status);
 		goto wakeup;
 	}
 	more = _dir->more;
@@ -1029,10 +1055,12 @@ void dir_cb(ldms_t t, int status, ldms_dir_t _dir, void *cb_arg)
 		}
 	}
 
+	TRACE("####dir_cb add_dir status is %d. more is %d\n", dir_status, more);
 	if (more)
 		return;
 
  wakeup:
+	TRACE("##dir_cb wakeup reached. dir_status %d. signaling dir_cv\n", dir_status);
 	dir_done = 1;
 	pthread_cond_signal(&dir_cv);
 }
@@ -1142,6 +1170,9 @@ int main(int argc, char *argv[])
 	long ptmp;
 	while ((op = getopt(argc, argv, FMT)) != -1) {
 		switch (op) {
+		case 'T':
+			trace = 1;
+			break;
 		case 'E':
 			regex = 1;
 			break;
@@ -1296,6 +1327,7 @@ int main(int argc, char *argv[])
 		exit(2);
 	}
 
+	TRACE("##main waiting on conn_sem\n");
 	sem_wait(&conn_sem);
 	if (done) {
 		/* Connection error/rejected */
@@ -1303,8 +1335,10 @@ int main(int argc, char *argv[])
 	}
 	pthread_mutex_init(&dir_lock, 0);
 	pthread_cond_init(&dir_cv, NULL);
+
 	pthread_mutex_init(&done_lock, 0);
 	pthread_cond_init(&done_cv, NULL);
+
 	pthread_mutex_init(&print_lock, 0);
 	pthread_cond_init(&print_cv, NULL);
 
@@ -1328,11 +1362,13 @@ int main(int argc, char *argv[])
 	}
 	if (optind == argc) {
 		/* List all existing metric sets */
-		ret = ldms_xprt_dir(ldms, dir_cb, NULL, 0);
+		ret = ldms_xprt_dir(ldms, dir_cb, DC_LOC_1, 0);
 		if (ret) {
 			printf("ldms_dir returned synchronous error %d\n",
 			      ret);
 			exit(1);
+		} else {
+			TRACE("## ldms_xprt_dir all sets returns 0\n");
 		}
 	} else {
 		is_filter_list = 1;
@@ -1368,19 +1404,23 @@ int main(int argc, char *argv[])
 				exit(1);
 			LIST_INSERT_HEAD(&match_list, match, entry);
 		}
-		ret = ldms_xprt_dir(ldms, dir_cb, NULL, 0);
+		ret = ldms_xprt_dir(ldms, dir_cb, DC_LOC_2, 0);
 		if (ret) {
 			printf("ldms_dir returned synchronous "
 			       "error %d\n", ret);
 			exit(1);
+		} else {
+			TRACE("## ldms_xprt_dir filtered returns 0\n");
 		}
 	}
 
 	clock_gettime(CLOCK_REALTIME, &ts);
 	ts.tv_sec += waitsecs;
 	pthread_mutex_lock(&dir_lock);
+	TRACE("## waiting on dir_done.\n");
 	while (!dir_done)
 		ret = pthread_cond_timedwait(&dir_cv, &dir_lock, &ts);
+	TRACE("## wait dir_lock done. ret %d\n", ret);
 	pthread_mutex_unlock(&dir_lock);
 	if (ret)
 		server_timeout();
@@ -1473,6 +1513,7 @@ int main(int argc, char *argv[])
 		LIST_REMOVE(lss, entry);
 
 		pthread_mutex_lock(&print_lock);
+		TRACE("##main -l print_done = 0 \n");
 		print_done = 0;
 		pthread_mutex_unlock(&print_lock);
 
@@ -1486,8 +1527,10 @@ int main(int argc, char *argv[])
 			       ret, lss->set_data->inst_name);
 		}
 		pthread_mutex_lock(&print_lock);
-		while (!print_done)
+		TRACE("##main -l waiting on print_done\n");
+		while (!print_done) {
 			pthread_cond_wait(&print_cv, &print_lock);
+		}
 		pthread_mutex_unlock(&print_lock);
 		free(lss);
 	}
@@ -1513,6 +1556,7 @@ int main(int argc, char *argv[])
 	done = 1;
 done:
 	pthread_mutex_lock(&done_lock);
+	TRACE("##main waiting on 'done' \n");
 	while (!done)
 		pthread_cond_wait(&done_cv, &done_lock);
 	pthread_mutex_unlock(&done_lock);
@@ -1528,6 +1572,7 @@ done:
 	struct timespec _t;
 	clock_gettime(CLOCK_REALTIME, &_t);
 	_t.tv_sec += 2;
+	TRACE("##main waiting on conn_sem\n");
 	sem_timedwait(&conn_sem, &_t);
 
 	ldms_xprt_term(1);

@@ -10,13 +10,13 @@ export CC=gcc; # on chama, gcc46 is in default path.
 
 export CXX=g++ ; # needed for configure. not used anywhere in build yet.
 
-export CFLAGS="-O1 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -m64 -march=native" ; # cflags common to us, libevent2
+export CFLAGS="-O1 -g -pipe -Wall -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 " ; # cflags common to us, libevent2
 
 # local path of scratch ldms files
 build_subdir=LDMS_objdir
 
 # full path of where we want things installed
-prefix=`pwd`/LDMS_install
+prefix=`pwd`/LDMS_installb4.4_ls
 
 if test -f ldms/src/sampler/meminfo/meminfo.c; then
 	mkdir -p $prefix
@@ -43,7 +43,7 @@ if test -f ldms/src/sampler/meminfo/meminfo.c; then
 	cd $build_subdir
 	expected_ovislib_prefix=$prefix
 	expected_sos_prefix=/badsos
-	allconfig="--prefix=$prefix --enable-rdma --enable-ssl --disable-sos --disable-perfevent --enable-zap --enable-zaptest --enable-sysclassib --enable-ibnet --enable-jobid"
+	allconfig="--prefix=$prefix --disable-rdma --enable-ssl --disable-sos --disable-perfevent --enable-zap --enable-zaptest --enable-jobid"
 	../configure $allconfig && \
 	make && \
 	make install && \
