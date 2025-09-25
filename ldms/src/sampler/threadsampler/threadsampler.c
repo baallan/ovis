@@ -13,11 +13,15 @@
 #include "ldmsd.h"
 #include "ldmsd_plug_api.h"
 
+#define FAKEDATA 1
 
 #define PLUGIN_NAME "threadsampler"
 #define MSR_IA32_APERF 0xE7
 #define MSR_IA32_MPERF 0xE8
 
+#if FAKEDATA
+uint64_t fake;
+#endif
 
 struct threadsampler {
     ldms_set_t set;
@@ -31,6 +35,9 @@ struct threadsampler {
 
 static uint64_t read_msr(int cpu, off_t msr_offset)
 {
+#if FAKEDATA
+	return (uint64_t)msr_offset*1000000 + fake;
+#else
     char msr_path[32];
     snprintf(msr_path, sizeof(msr_path), "/dev/cpu/%d/msr", cpu);
 
@@ -51,6 +58,7 @@ static uint64_t read_msr(int cpu, off_t msr_offset)
 
     close(fd);
     return value;
+#endif
 }
 
 
@@ -175,6 +183,9 @@ static int threadsampler_config(ldmsd_plug_handle_t handle,
                                 struct attr_value_list *avl)
 {
     printf(">>> threadsampler_config() called!\n");
+#if FAKEDATA
+    fake = 1;
+#endif
     fflush(stdout);
     struct threadsampler *ts = ldmsd_plug_ctxt_get(handle);
     if (!ts) {
@@ -199,6 +210,10 @@ static int threadsampler_sample(ldmsd_plug_handle_t handle)
     struct threadsampler *ts = ldmsd_plug_ctxt_get(handle);
     if (!ts || !ts->set)
         return EINVAL;
+
+#if FAKEDATA
+    fake += 1;
+#endif
 
     int metric_count = ldms_set_card_get(ts->set);
     static int warned = 0;

@@ -1,0 +1,16 @@
+export plugname=threadsampler
+portbase=10000
+VGARGS="--tool=drd --trace-cond=yes --trace-fork-join=yes"
+VGARGS="--leak-check=full --track-origins=yes --trace-children=yes --show-leak-kinds=definite --time-stamp=yes --keep-debuginfo=yes --malloc-fill=3b"
+DAEMONS 2
+vgon
+LDMSD -c 1 2
+vgoff
+SLEEP 5
+MESSAGE ldms_ls on host 1:
+LDMS_LS 1 -l
+MESSAGE ldms_ls on host 2:
+LDMS_LS 2 -l
+SLEEP 5
+KILL_LDMSD 1 2
+file_created $STOREDIR/node/$testname
