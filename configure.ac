@@ -1,4 +1,4 @@
-dnl Process this file with autoconf to produce a configure script.
+\dnl Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.64)
 AC_INIT([ovis-ldms],
@@ -1082,13 +1082,14 @@ ldms/src/sampler/examples/list_sampler/Makefile
 ldms/src/sampler/examples/record_sampler/Makefile
 ldms/src/sampler/ibm_occ/Makefile
 ldms/src/sampler/syspapi/Makefile
+ldms/src/sampler/threadsampler/Makefile
 ldms/src/sampler/app_sampler/Makefile
 ldms/src/sampler/slingshot_metrics/Makefile
 ldms/src/sampler/slingshot_info/Makefile
 ldms/src/sampler/json/Makefile
-ldms/src/sampler/hweventpapi/Makefile \
-ldms/src/sampler/rapl/Makefile \
-ldms/src/sampler/tsampler/Makefile \
+ldms/src/sampler/hweventpapi/Makefile
+ldms/src/sampler/rapl/Makefile
+ldms/src/sampler/tsampler/Makefile
 ldms/src/sampler/zfs_topvdevs/Makefile
 ldms/src/sampler/zfs_leafvdevs/Makefile
 ldms/src/sampler/zfs_zpool/Makefile

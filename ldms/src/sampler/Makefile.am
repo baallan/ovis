@@ -203,6 +203,8 @@ endif
 endif
 endif
 
+SUBDIRS += threadsampler
+
 if ENABLE_PROCDISKSTATS
 SUBDIRS += procdiskstats
 endif
