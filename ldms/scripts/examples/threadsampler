@@ -2,7 +2,7 @@ export plugname=threadsampler
 portbase=10000
 VGARGS="--tool=drd --trace-cond=yes --trace-fork-join=yes"
 VGARGS="--leak-check=full --track-origins=yes --trace-children=yes --show-leak-kinds=definite --time-stamp=yes --keep-debuginfo=yes --malloc-fill=3b"
-DAEMONS 2
+DAEMONS $(seq 2)
 vgon
 LDMSD -c 1 2
 vgoff
