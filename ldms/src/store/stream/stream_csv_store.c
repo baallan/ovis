@@ -84,8 +84,8 @@
  * user changes these in the code before build, for now
  * timestamp store only for json lines, not text
  */
-#undef TIMESTAMP_STORE
-#undef STREAM_CSV_DIAGNOSTICS
+#define TIMESTAMP_STORE
+#define STREAM_CSV_DIAGNOSTICS
 #define CB_MSG_LOG 50000
 
 #ifndef ARRAY_SIZE

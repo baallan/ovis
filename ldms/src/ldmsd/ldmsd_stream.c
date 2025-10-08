@@ -611,6 +611,7 @@ int ldmsd_stream_publish_file(const char *stream, const char *type,
 	uint32_t msg_no;
 	struct ldmsd_req_attr_s a;
 	struct stream_ctxt ctxt = {0};
+	int send_count = 0;
 
 	char *timeout_s;
 	int timeout = LDMSD_STREAM_CONNECT_TIMEOUT;
@@ -699,6 +700,7 @@ int ldmsd_stream_publish_file(const char *stream, const char *type,
 				buffer[cnt] = '\0';
 				cnt += 1;
 			}
+			send_count++;
 			rc = stream_send(&ctxt, buf, msg_no, 0, buffer, cnt);
 			if (rc)
 				goto close_xprt;
@@ -747,6 +749,7 @@ int ldmsd_stream_publish_file(const char *stream, const char *type,
 				     buf, data_len + 1 /* terminating '\0' */);
 		if (rc)
 			goto close_xprt;
+		send_count++;
 		rc = stream_send(&ctxt, buf, msg_no, 0, buffer, data_len + 1);
 		if (rc)
 			goto close_xprt;
@@ -755,6 +758,7 @@ int ldmsd_stream_publish_file(const char *stream, const char *type,
 	/* Terminating */
 	a.discrim = 0;
 	ctxt.is_done = 1;
+	send_count++;
 	rc = stream_send(&ctxt, buf, msg_no, LDMSD_REQ_EOM_F,
 			(char *)&a.discrim, sizeof(a.discrim));
 	if (rc)
@@ -781,6 +785,7 @@ err:
 	free(buffer);
 	if (buf)
 		ldmsd_msg_buf_free(buf);
+	printf("LDMSD_PUB_FILE SEND_COUNT: %d\n", send_count);
 	return rc;
 }
 

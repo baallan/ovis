@@ -50,6 +50,7 @@ void usage(int argc, char **argv)
 static const char *short_opts = "h:p:f:s:t:x:a:A:lr:i:nNP:";
 
 #define AUTH_OPT_MAX 128
+#define PC printf("pubcalls : %d  pubcalls_file %d\n", pubcalls, pubcalls_file)
 
 int main(int argc, char **argv)
 {
@@ -68,6 +69,8 @@ int main(int argc, char **argv)
 	ldmsd_stream_type_t typ = LDMSD_STREAM_STRING;
 	int line_mode = 0;	/* publish each line separately */
 	int repeat = 0;
+	int pubcalls_file = 0;
+	int pubcalls = 0;
 	unsigned interval = 0;
 	enum {
 		NEW_FALSE = 0,
@@ -213,28 +216,35 @@ int main(int argc, char **argv)
 	}
 	if (stream_new) {
 		/* Create and send a STREAM_NEW message */
+		pubcalls++;
 		rc = ldmsd_stream_new_publish(stream, ldms);
 		if (rc) {
 			printf("Error %d creating stream and notifying client\n", rc);
+			PC;
 			return rc;
 		}
-		if (NEW_ONLY == stream_new)
+		if (NEW_ONLY == stream_new) {
+			PC;
 			return 0;
+		}
 	}
 
 	int k;
 	if (!line_mode) {
 		for (k = 0; k < repeat; k++) {
+			pubcalls_file++;
 			rc = ldmsd_stream_publish_file(stream, stream_type, xprt,
 					host, port, auth, auth_opt, file);
 			if (repeat == 1 && rc) {
 				printf("Error %d publishing file.\n", rc);
+				PC;
 				return rc;
 			}
 			usleep(interval);
 			if (k)
 				printf("loop: %d returned %d\n", k, rc);
 		}
+		PC;
 		return 0;
 	}
 
@@ -244,6 +254,7 @@ int main(int argc, char **argv)
 		if (k)
 			rewind(file);
 		while (0 != (s = fgets(line_buffer, sizeof(line_buffer)-1, file))) {
+			pubcalls++;
 			ldmsd_stream_publish(ldms, stream, typ, s, strlen(s)+1);
 		}
 		if (k)
@@ -251,5 +262,6 @@ int main(int argc, char **argv)
 		usleep(interval);
 	}
 	ldms_xprt_close(ldms);
+	PC;
 	return rc;
 }
