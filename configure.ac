@@ -1118,6 +1118,8 @@ ldms/man/Makefile
 ] )
 
 AC_CONFIG_FILES([
+	ldms/python/ldmsd/ldmsd_controller
+	ldms/python/ldmsd/ldmsd_yaml_parser
 	util/relocation/bld_manifest.sh
 	util/relocation/relocate-paths.sh
 	ldms/scripts/ldms-wrapper

@@ -49,13 +49,15 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #######################################################################
-
+# use only the python site-packages we built along with this script
 from __future__ import print_function
+import sys
+ovis_ldms_pythondir="@pythondir@"
+sys.path.insert(0, ovis_ldms_pythondir)
 from builtins import str
 import struct
 import cmd
 import argparse
-import sys
 import os
 import traceback
 import json

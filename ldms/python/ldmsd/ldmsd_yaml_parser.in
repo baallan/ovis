@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 import os, sys
+# use only the python site-packages we built along with this script
+ovis_ldms_pythondir="@pythondir@"
+sys.path.insert(0, ovis_ldms_pythondir)
+
 import yaml
 import errno
 import argparse
